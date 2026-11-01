@@ -72,7 +72,7 @@ public class RbacAdminService {
     public RoleView createRole(AdminScope actor, RoleCreateRequest request) {
         actor.requireGlobal();
         if (repository.findRole(request.code()).isPresent()) {
-            throw AdminProblem.conflict("role-exists", "Ruolo gia' esistente");
+            throw AdminProblem.conflict("role-exists", "Role already exists");
         }
         Set<String> permissions = validatePermissions(request.permissions());
         repository.insertRole(request.code(), request.description());
@@ -89,7 +89,7 @@ public class RbacAdminService {
         Set<String> permissions = validatePermissions(request.permissions());
         if (!repository.updateRole(code, request.description(), request.version())) {
             throw AdminProblem.conflict("version-mismatch",
-                    "Il ruolo e' stato modificato da un altro amministratore: ricaricare e riprovare");
+                    "The role was changed by another administrator: reload and retry");
         }
         repository.replaceRolePermissions(code, permissions);
         RoleView after = repository.findRole(code).orElseThrow();
@@ -102,7 +102,7 @@ public class RbacAdminService {
         actor.requireGlobal();
         RoleView before = existingCustomRole(code);
         if (repository.isRoleAssigned(code)) {
-            throw AdminProblem.conflict("role-assigned", "Ruolo ancora assegnato: rimuovere prima le assegnazioni");
+            throw AdminProblem.conflict("role-assigned", "Role still assigned: remove the assignments first");
         }
         repository.deleteRole(code);
         audit(actor, "ROLE_DELETED", "ROLE", code, null, before, null);
@@ -121,7 +121,7 @@ public class RbacAdminService {
     public TenantView createTenant(AdminScope actor, TenantCreateRequest request) {
         actor.requireGlobal();
         if (repository.findTenant(request.code()).isPresent()) {
-            throw AdminProblem.conflict("tenant-exists", "Tenant gia' esistente");
+            throw AdminProblem.conflict("tenant-exists", "Tenant already exists");
         }
         repository.insertTenant(request.code(), request.description());
         TenantView created = new TenantView(request.code(), request.description());
@@ -146,7 +146,7 @@ public class RbacAdminService {
     @Transactional
     public UserView createUser(AdminScope actor, UserCreateRequest request) {
         if (repository.findUser(request.username()).isPresent()) {
-            throw AdminProblem.conflict("user-exists", "Utente gia' esistente");
+            throw AdminProblem.conflict("user-exists", "User already exists");
         }
         repository.insertUser(request.username(), request.email());
         UserView created = view(actor, existingUser(request.username()));
@@ -175,7 +175,7 @@ public class RbacAdminService {
         actor.requireTenant(tenant);
         actor.requireNotSelf(username);
         if (!repository.lockTenant(tenant)) {
-            throw AdminProblem.notFound("Tenant inesistente");
+            throw AdminProblem.notFound("Unknown tenant");
         }
         UserRow user = existingUser(username);
         SortedSet<String> before = repository.userAssignments(user.id()).getOrDefault(tenant, new TreeSet<>());
@@ -187,7 +187,7 @@ public class RbacAdminService {
         Set<String> unknown = new TreeSet<>(after);
         unknown.removeAll(permissionsByRole.keySet());
         if (!unknown.isEmpty()) {
-            throw AdminProblem.invalid("unknown-role", "Ruoli inesistenti: " + unknown);
+            throw AdminProblem.invalid("unknown-role", "Unknown roles: " + unknown);
         }
         if (!actor.isGlobal()) {
             Set<String> changed = new HashSet<>(touched);
@@ -197,7 +197,7 @@ public class RbacAdminService {
                             .anyMatch(p -> p.endsWith(GLOBAL_SUFFIX)));
             if (escalation) {
                 throw AdminProblem.forbidden("global-role",
-                        "Ruoli con permessi globali gestibili solo dall'amministratore globale");
+                        "Roles with global permissions can be managed only by the global administrator");
             }
         }
 
@@ -231,18 +231,18 @@ public class RbacAdminService {
     }
 
     private UserRow existingUser(String username) {
-        return repository.findUser(username).orElseThrow(() -> AdminProblem.notFound("Utente inesistente"));
+        return repository.findUser(username).orElseThrow(() -> AdminProblem.notFound("Unknown user"));
     }
 
     private void existingTenant(String tenant) {
-        repository.findTenant(tenant).orElseThrow(() -> AdminProblem.notFound("Tenant inesistente"));
+        repository.findTenant(tenant).orElseThrow(() -> AdminProblem.notFound("Unknown tenant"));
     }
 
     private RoleView existingCustomRole(String code) {
-        RoleView role = repository.findRole(code).orElseThrow(() -> AdminProblem.notFound("Ruolo inesistente"));
+        RoleView role = repository.findRole(code).orElseThrow(() -> AdminProblem.notFound("Unknown role"));
         if (role.system()) {
             throw AdminProblem.forbidden("system-role",
-                    "Ruolo di sistema: si modifica solo con le migrazioni del database");
+                    "System role: it changes only through database migrations");
         }
         return role;
     }
@@ -254,12 +254,12 @@ public class RbacAdminService {
         permissions.stream().filter(p -> p.endsWith(GLOBAL_SUFFIX)).forEach(global::add);
         if (!global.isEmpty()) {
             throw AdminProblem.invalid("global-permission",
-                    "Permessi globali riservati al ruolo di sistema GLOBAL_ADMIN: " + global);
+                    "Global permissions are reserved to the system role GLOBAL_ADMIN: " + global);
         }
         Set<String> unknown = new TreeSet<>(permissions);
         unknown.removeAll(repository.existingPermissions(permissions));
         if (!unknown.isEmpty()) {
-            throw AdminProblem.invalid("unknown-permission", "Permessi non presenti nel catalogo: " + unknown);
+            throw AdminProblem.invalid("unknown-permission", "Permissions not in the catalog: " + unknown);
         }
         return permissions;
     }

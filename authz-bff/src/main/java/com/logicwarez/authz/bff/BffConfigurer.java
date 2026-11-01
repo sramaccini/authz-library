@@ -95,7 +95,7 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
         protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
                 throws ServletException, IOException {
             if (!policy.isAllowed(request)) {
-                problem(response, HttpStatus.FORBIDDEN, "Origine non ammessa");
+                problem(response, HttpStatus.FORBIDDEN, "Origin not allowed");
                 return;
             }
             chain.doFilter(request, response);
@@ -163,7 +163,7 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
                 }
                 if (count != null && count > limit.maxRequests()) {
                     response.setHeader("Retry-After", String.valueOf(Math.max(1, limit.window().toSeconds())));
-                    problem(response, HttpStatus.TOO_MANY_REQUESTS, "Troppi tentativi di accesso");
+                    problem(response, HttpStatus.TOO_MANY_REQUESTS, "Too many login attempts");
                     return;
                 }
             } catch (DataAccessException e) {

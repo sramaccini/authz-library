@@ -20,11 +20,11 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:8080/login/oauth2/code/iam"],
-      "webOrigins": ["http://localhost:8080"],
+      "redirectUris": ["http://localhost:8080/login/oauth2/code/iam", "http://localhost:8090/login/oauth2/code/iam"],
+      "webOrigins": ["http://localhost:8080", "http://localhost:8090"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:4200/*"
+        "post.logout.redirect.uris": "http://localhost:4200/*##http://localhost:8090/*"
       },
       "protocolMappers": [
         {

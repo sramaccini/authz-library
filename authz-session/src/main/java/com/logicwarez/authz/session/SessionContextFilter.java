@@ -48,7 +48,7 @@ public class SessionContextFilter extends OncePerRequestFilter {
             response.setStatus(HttpStatus.SERVICE_UNAVAILABLE.value());
             response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
             response.getWriter().write("""
-                    {"type":"about:blank","title":"Service Unavailable","status":503,"detail":"Servizio temporaneamente non disponibile"}""");
+                    {"type":"about:blank","title":"Service Unavailable","status":503,"detail":"Service temporarily unavailable"}""");
             return;
         }
         session.ifPresent(s -> {

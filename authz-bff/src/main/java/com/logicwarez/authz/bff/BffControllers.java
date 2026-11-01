@@ -78,11 +78,11 @@ public final class BffControllers {
             if (returnTo != null) {
                 target = origins.applicationUrl(returnTo, request);
                 if (target.isEmpty()) {
-                    return problem(HttpStatus.BAD_REQUEST, "Pagina di ritorno non ammessa");
+                    return problem(HttpStatus.BAD_REQUEST, "Return page not allowed");
                 }
             }
             if (tenant != null && !TENANT.matcher(tenant).matches()) {
-                return problem(HttpStatus.BAD_REQUEST, "Tenant non valido");
+                return problem(HttpStatus.BAD_REQUEST, "Invalid tenant");
             }
             if (tenant == null && SessionContext.from(request).isPresent()) {
                 return ResponseEntity.status(HttpStatus.FOUND).location(target.map(URI::create).orElse(home)).build();
@@ -132,19 +132,19 @@ public final class BffControllers {
                                               @AuthenticationPrincipal SessionContext current,
                                               HttpServletRequest request) {
             if (body == null || body.tenant() == null || body.tenant().isBlank()) {
-                return problem(HttpStatus.BAD_REQUEST, "Tenant mancante");
+                return problem(HttpStatus.BAD_REQUEST, "Missing tenant");
             }
             if (!current.offersTenant(body.tenant())) {
-                return problem(HttpStatus.NOT_FOUND, "Tenant non offerto all'utente");
+                return problem(HttpStatus.NOT_FOUND, "Tenant not offered to the user");
             }
             AuthorizationResolver.Resolved resolved;
             try {
                 resolved = resolver.resolve(current.username(), body.tenant());
             } catch (UserNotAuthorizedException e) {
-                return problem(HttpStatus.NOT_FOUND, "Tenant non offerto all'utente");
+                return problem(HttpStatus.NOT_FOUND, "Tenant not offered to the user");
             } catch (RuntimeException e) {
                 log.error("Cambio di tenant fallito per {}: {}", current.username(), e.toString());
-                return problem(HttpStatus.SERVICE_UNAVAILABLE, "Servizio temporaneamente non disponibile");
+                return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service temporarily unavailable");
             }
             request.getSession().setAttribute(SessionContext.ATTRIBUTE, new SessionContext(resolved.username(),
                     current.name(), resolved.email(), resolved.tenantId(), resolved.tenants(), resolved.roles(),
@@ -155,7 +155,7 @@ public final class BffControllers {
 
         @ExceptionHandler(HttpMessageNotReadableException.class)
         ResponseEntity<ProblemDetail> unreadable() {
-            return problem(HttpStatus.BAD_REQUEST, "Corpo della richiesta non valido");
+            return problem(HttpStatus.BAD_REQUEST, "Invalid request body");
         }
 
         /**
@@ -219,7 +219,7 @@ public final class BffControllers {
             FindByIndexNameSessionRepository<? extends Session> repository = sessions.getIfAvailable();
             if (repository == null) {
                 return problem(HttpStatus.NOT_IMPLEMENTED,
-                        "Revoca non disponibile: configurare spring.session.data.redis.repository-type=indexed");
+                        "Revocation unavailable: set spring.session.data.redis.repository-type=indexed");
             }
             int revoked = 0;
             for (Map.Entry<String, ? extends Session> entry : repository.findByPrincipalName(username).entrySet()) {

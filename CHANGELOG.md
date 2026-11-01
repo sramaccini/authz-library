@@ -2,7 +2,17 @@
 
 Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Non rilasciato]
+## [2.1.0] - 2026-11-01
+
+Nessuna modifica ai contratti `bff.yaml` e `authz.yaml`: si aggiorna da 2.0.x cambiando solo la versione.
+
+### Modificato
+
+- Messaggi degli errori (`detail` dei Problem `application/problem+json`) in inglese, nel BFF, in `/authz/*`, nel
+  filtro della sessione e nell'API di amministrazione. Il `title` era già la frase standard dello status HTTP; `type`
+  e codici degli errori non cambiano.
+- Realm Keycloak di sviluppo: il client `bff-gateway` accetta anche `http://localhost:8090` (ritorno dal login,
+  origine e pagina dopo il logout), per l'immagine runtime di Quadrava.
 
 ### Aggiunto
 

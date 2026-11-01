@@ -35,7 +35,7 @@ public class AuthzController {
     public ResponseEntity<?> capabilities(@RequestParam(required = false) String app,
                                           @AuthenticationPrincipal SessionContext session) {
         if (app == null || app.isBlank()) {
-            return BffControllers.problem(HttpStatus.BAD_REQUEST, "Parametro app mancante");
+            return BffControllers.problem(HttpStatus.BAD_REQUEST, "Missing app parameter");
         }
         String version = session.permissionsVersion();
         return ResponseEntity.ok().header(VERSION_HEADER, version)
@@ -46,16 +46,16 @@ public class AuthzController {
     public ResponseEntity<?> check(@RequestBody(required = false) CheckRequest request,
                                    @AuthenticationPrincipal SessionContext session) {
         if (request == null || request.checks() == null) {
-            return BffControllers.problem(HttpStatus.BAD_REQUEST, "Elenco dei controlli mancante");
+            return BffControllers.problem(HttpStatus.BAD_REQUEST, "Missing checks");
         }
         if (request.checks().size() > MAX_CHECKS) {
             return BffControllers.problem(HttpStatus.BAD_REQUEST,
-                    "Troppi controlli in un batch (al massimo " + MAX_CHECKS + ")");
+                    "Too many checks in one batch (at most " + MAX_CHECKS + ")");
         }
         for (CheckItem item : request.checks()) {
             if (item == null || item.permission() == null || !PERMISSION.matcher(item.permission()).matches()) {
                 return BffControllers.problem(HttpStatus.BAD_REQUEST,
-                        "Permesso non valido: il formato e' dominio.risorsa.azione, minuscolo");
+                        "Invalid permission: the format is domain.resource.action, lowercase");
             }
         }
         List<CheckResult> results = request.checks().stream()
@@ -67,7 +67,7 @@ public class AuthzController {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ProblemDetail> unreadable() {
-        return BffControllers.problem(HttpStatus.BAD_REQUEST, "Corpo della richiesta non valido");
+        return BffControllers.problem(HttpStatus.BAD_REQUEST, "Invalid request body");
     }
 
     public record Capabilities(List<String> permissions, String version) {

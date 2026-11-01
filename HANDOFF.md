@@ -6,7 +6,7 @@ L'utente è Simone. Lavora in italiano, tono tecnico.
 
 ## Stato
 
-**2026-10-31 — 2.0.1** (fix del 401 al posto del 404 e sugli async dispatch; 2.0.0 il giorno stesso), groupId e package `com.logicwarez.authz` (le pubblicazioni dello stesso giorno con `com.enterprise.authz` 2.0.0 e `it.logicware.authz` 3.0.0 sono ritirate). Repository github.com/sramaccini/authz-library, branch `master`. Le librerie
+**2026-11-01 — 2.1.0** (test di integrazione, OpenAPI generata, sessioni di altre versioni, errori in inglese; 2.0.0 e 2.0.1 il 2026-10-31), groupId e package `com.logicwarez.authz` (le pubblicazioni dello stesso giorno con `com.enterprise.authz` 2.0.0 e `it.logicware.authz` 3.0.0 sono ritirate). Repository github.com/sramaccini/authz-library, branch `master`. Le librerie
 (`authz-session`, `authz-rbac`, `authz-bff`, esempio `examples/authz-demo-app`) hanno sostituito i servizi della 1.x,
 eliminati su indicazione dell'utente (erano in `legacy/`; restano nella storia git fino al commit `0074f15`).
 

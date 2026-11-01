@@ -28,19 +28,19 @@ public record AdminScope(String username, String tenantId, Set<String> permissio
 
     void requireGlobal() {
         if (!isGlobal()) {
-            throw AdminProblem.forbidden("global-admin-required", "Operazione riservata all'amministratore globale");
+            throw AdminProblem.forbidden("global-admin-required", "Operation reserved to the global administrator");
         }
     }
 
     void requireTenant(String tenant) {
         if (!canManageTenant(tenant)) {
-            throw AdminProblem.forbidden("tenant-out-of-scope", "Tenant fuori dall'ambito dell'amministratore");
+            throw AdminProblem.forbidden("tenant-out-of-scope", "Tenant outside the administrator's scope");
         }
     }
 
     void requireNotSelf(String targetUsername) {
         if (username.equals(targetUsername)) {
-            throw AdminProblem.forbidden("self-modification", "Non e' consentito modificare la propria utenza");
+            throw AdminProblem.forbidden("self-modification", "Administrators cannot modify their own account");
         }
     }
 }

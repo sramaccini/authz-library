@@ -42,12 +42,12 @@ Nel `pom.xml` dell'applicazione:
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-bff</artifactId>   <!-- porta con se' authz-session -->
-        <version>2.0.1</version>
+        <version>2.1.0</version>
     </dependency>
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-rbac</artifactId>  <!-- facoltativo: RBAC su PostgreSQL -->
-        <version>2.0.1</version>
+        <version>2.1.0</version>
     </dependency>
 </dependencies>
 ```
@@ -170,13 +170,15 @@ di un'altra versione). Richiedono Docker in esecuzione; senza Docker vengono sal
 
 ```bash
 set -a; . ./.env; set +a
-IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.0.1.jar --spring.profiles.active=dev
+IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.1.0.jar --spring.profiles.active=dev
 ```
 
 Utenti demo (password `DEMO_USER_PASSWORD` di `.env`): `mario.rossi` (TENANT_A), `anna.bianchi` (TENANT_A e
 TENANT_B), `admin.tenant.a` (amministratore delegato di TENANT_A), `admin.globale` (amministratore globale).
 L'import del realm usa `OVERWRITE_EXISTING`: le modifiche fatte a mano dalla console di Keycloak si perdono al
-riavvio del container.
+riavvio del container. Il client `bff-gateway` accetta il ritorno dal login su `http://localhost:8080` (app demo) e
+`http://localhost:8090` (immagine runtime di Quadrava davanti al BFF); dopo una modifica del realm il container di
+Keycloak va riavviato.
 
 Variabili principali: `IAM_ISSUER_URI`, `IAM_CLIENT_ID`, `IAM_CLIENT_SECRET`, `AUTH_DB_URL`, `AUTH_DB_USER`,
 `AUTH_DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `FRONTEND_URL`, `FORWARD_HEADERS_STRATEGY`.

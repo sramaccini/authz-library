@@ -46,10 +46,15 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
-        <!-- Annotazioni OpenAPI sul controller: la definizione si genera nell'applicazione con springdoc -->
+        <!-- Annotazioni OpenAPI sul controller; la definizione la genera AdminOpenApiTest con springdoc -->
         <dependency>
             <groupId>io.swagger.core.v3</groupId>
             <artifactId>swagger-annotations-jakarta</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

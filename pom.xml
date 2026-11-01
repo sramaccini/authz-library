@@ -41,6 +41,8 @@
     <properties>
         <java.version>25</java.version>
         <swagger-annotations.version>2.2.55</swagger-annotations.version>
+        <!-- Solo nei test: genera la definizione OpenAPI dell'API di amministrazione -->
+        <springdoc.version>3.1.1</springdoc.version>
     </properties>
 
     <modules>
@@ -71,6 +73,11 @@
                 <groupId>io.swagger.core.v3</groupId>
                 <artifactId>swagger-annotations-jakarta</artifactId>
                 <version>${swagger-annotations.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+                <version>${springdoc.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

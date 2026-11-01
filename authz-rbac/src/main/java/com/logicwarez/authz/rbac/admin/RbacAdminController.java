@@ -35,9 +35,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * API di amministrazione RBAC per il frontend, raggiunta tramite il BFF (rotta /api/v1/admin/**)
- * e autenticata con la sessione del BFF (X-Session-ID). Contratto generato da springdoc: GET /v3/api-docs,
- * esportato dal build in docs/authz-admin-openapi-spec.json.
+ * API di amministrazione RBAC per il frontend (/api/v1/admin/**), autenticata con la sessione di authz-bff.
+ * Contratto in docs/authz-admin-openapi-spec.json, generato e verificato dal build (AdminOpenApiTest).
  */
 @RestController
 @RequestMapping("/api/v1/admin")

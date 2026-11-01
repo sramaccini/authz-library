@@ -1,72 +1,163 @@
 {
   "openapi" : "3.1.0",
   "info" : {
+    "description" : "API per l'interfaccia di amministrazione della SPA, esposte dall'applicazione che incorpora authz-bff e authz-rbac (stessa origine della SPA).\n\n**Autenticazione**: cookie di sessione impostato dal BFF al login (`SESSION_ID` nell'applicazione di esempio; nessun token nel JavaScript). Le richieste `POST`, `PUT`, `PATCH`, `DELETE` devono avere l'header `X-XSRF-TOKEN` con il valore del cookie `XSRF-TOKEN`; un header `Origin` presente deve essere un'origine ammessa.\n\n**Ambiti**\n- `authz.rbac.manage` (ruolo `TENANT_ADMIN`): amministratore delegato, solo il tenant della propria sessione.\n- `authz.rbac.manageglobal` (ruolo `GLOBAL_ADMIN`): tutti i tenant; in esclusiva definisce ruoli, crea tenant, attiva e disattiva utenti.\n\n**Regole**\n- Il catalogo dei permessi e i ruoli di sistema (`system: true`) si modificano solo con le migrazioni.\n- I permessi la cui azione finisce in `global` esistono solo in `GLOBAL_ADMIN`; un amministratore delegato non assegna né toglie ruoli che li contengono.\n- Nessuno può modificare le proprie assegnazioni o disattivare se stesso.\n- Le modifiche hanno effetto al login successivo degli utenti coinvolti; per un effetto immediato si revocano le sessioni con `DELETE /bff/admin/users/{username}/sessions` (endpoint di authz-bff).\n- Ogni modifica è registrata nell'audit.\n\n**Errori**: `application/problem+json` (RFC 9457), `type` = `urn:problem:auth-service:<codice>`: `tenant-out-of-scope`, `global-admin-required`, `global-role`, `self-modification`, `system-role`, `access-denied` (403); `unknown-role`, `unknown-permission`, `global-permission` (400); `not-found` (404); `version-mismatch`, `role-exists`, `role-assigned`, `tenant-exists`, `user-exists` (409).\n",
     "title" : "ms-authz - API di amministrazione RBAC",
-    "description" : "API per l'interfaccia di amministrazione della SPA, esposte dal BFF (stessa origine della SPA).\n\n**Autenticazione**: cookie `SESSION_ID` impostato dal BFF al login (nessun token nel JavaScript).\nLe richieste non idempotenti (POST, PUT, PATCH, DELETE) devono avere l'header `X-XSRF-TOKEN` con il valore del cookie `XSRF-TOKEN`; un header `Origin` presente deve essere ammesso.\n\n**Ambiti**\n- `authz.rbac.manage` (ruolo `TENANT_ADMIN`): amministratore delegato, solo il tenant della propria sessione.\n- `authz.rbac.manageglobal` (ruolo `GLOBAL_ADMIN`): tutti i tenant; in esclusiva definisce ruoli,\n  crea tenant, attiva/disattiva utenti.\n\n**Regole**\n- Il catalogo dei permessi e i ruoli di sistema (`system: true`) si modificano solo con le migrazioni.\n- I permessi `*-global` esistono solo in `GLOBAL_ADMIN`; un amministratore delegato non assegna ne'\n  toglie ruoli che li contengono.\n- Nessuno puo' modificare le proprie assegnazioni o disattivare se stesso.\n- Le modifiche hanno effetto al login successivo degli utenti coinvolti; per un effetto immediato\n  si revocano le sessioni con `DELETE /bff/admin/users/{username}/sessions` (endpoint del BFF).\n- Ogni modifica e' registrata nell'audit.\n\n**Errori**: `application/problem+json` (RFC 9457), `type` = `urn:problem:auth-service:<codice>`:\n`tenant-out-of-scope`, `global-admin-required`, `global-role`, `self-modification`, `system-role` (403);\n`unknown-role`, `unknown-permission`, `global-permission` (400); `not-found` (404);\n`version-mismatch`, `role-exists`, `role-assigned`, `tenant-exists`, `user-exists` (409).\n",
-    "version" : "1.0.0"
+    "version" : "v1"
   },
   "servers" : [ {
     "url" : "http://localhost:8080",
-    "description" : "BFF"
+    "description" : "Applicazione con authz-bff"
   } ],
   "security" : [ {
     "sessionCookie" : [ ]
   } ],
   "paths" : {
-    "/api/v1/admin/tenants/{tenant}/users/{username}/roles" : {
-      "put" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Sostituisce i ruoli dell'utente sul tenant (lista vuota = nessun ruolo)",
-        "operationId" : "replaceUserRoles",
+    "/api/v1/admin/audit" : {
+      "get" : {
+        "operationId" : "audit",
         "parameters" : [ {
+          "in" : "query",
           "name" : "tenant",
-          "in" : "path",
-          "required" : true,
+          "required" : false,
           "schema" : {
             "type" : "string",
             "pattern" : "^[A-Za-z0-9_-]{1,50}$"
           }
         }, {
-          "name" : "username",
-          "in" : "path",
-          "required" : true,
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
           "schema" : {
-            "type" : "string",
-            "pattern" : "^[A-Za-z0-9._@-]{1,150}$"
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 50
+          }
+        }, {
+          "in" : "query",
+          "name" : "offset",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 0
           }
         } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/AuditEntry"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Registro delle modifiche, piu' recenti prima (il delegato vede solo il proprio tenant)",
+        "tags" : [ "Amministrazione RBAC" ]
+      }
+    },
+    "/api/v1/admin/permissions" : {
+      "get" : {
+        "operationId" : "permissions",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/PermissionView"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Catalogo dei permessi (sola lettura)",
+        "tags" : [ "Amministrazione RBAC" ]
+      }
+    },
+    "/api/v1/admin/roles" : {
+      "get" : {
+        "operationId" : "roles",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/RoleView"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Ruoli con i relativi permessi",
+        "tags" : [ "Amministrazione RBAC" ]
+      },
+      "post" : {
+        "operationId" : "createRole",
         "requestBody" : {
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/RoleAssignmentRequest"
+                "$ref" : "#/components/schemas/RoleCreateRequest"
               }
             }
           },
           "required" : true
         },
         "responses" : {
-          "200" : {
-            "description" : "OK",
+          "201" : {
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/UserView"
+                  "$ref" : "#/components/schemas/RoleView"
                 }
               }
-            }
+            },
+            "description" : "Created"
           }
-        }
+        },
+        "summary" : "Crea un ruolo (solo amministratore globale)",
+        "tags" : [ "Amministrazione RBAC" ]
       }
     },
     "/api/v1/admin/roles/{code}" : {
+      "delete" : {
+        "operationId" : "deleteRole",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "code",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "pattern" : "^[A-Z][A-Z0-9_]{1,99}$"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Elimina un ruolo non assegnato e non di sistema (solo globale)",
+        "tags" : [ "Amministrazione RBAC" ]
+      },
       "put" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Sostituisce descrizione e permessi di un ruolo non di sistema (solo globale, con version)",
         "operationId" : "updateRole",
         "parameters" : [ {
-          "name" : "code",
           "in" : "path",
+          "name" : "code",
           "required" : true,
           "schema" : {
             "type" : "string",
@@ -85,74 +176,25 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
             "content" : {
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/RoleView"
                 }
               }
-            }
+            },
+            "description" : "OK"
           }
-        }
-      },
-      "delete" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Elimina un ruolo non assegnato e non di sistema (solo globale)",
-        "operationId" : "deleteRole",
-        "parameters" : [ {
-          "name" : "code",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "pattern" : "^[A-Z][A-Z0-9_]{1,99}$"
-          }
-        } ],
-        "responses" : {
-          "204" : {
-            "description" : "No Content"
-          }
-        }
-      }
-    },
-    "/api/v1/admin/users" : {
-      "post" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Censisce un utente gia' presente nello IAM",
-        "operationId" : "createUser",
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/UserCreateRequest"
-              }
-            }
-          },
-          "required" : true
         },
-        "responses" : {
-          "201" : {
-            "description" : "Created",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/UserView"
-                }
-              }
-            }
-          }
-        }
+        "summary" : "Sostituisce descrizione e permessi di un ruolo non di sistema (solo globale, con version)",
+        "tags" : [ "Amministrazione RBAC" ]
       }
     },
     "/api/v1/admin/tenants" : {
       "get" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Tenant gestibili dall'amministratore",
         "operationId" : "tenants",
         "responses" : {
           "200" : {
-            "description" : "OK",
             "content" : {
               "*/*" : {
                 "schema" : {
@@ -162,13 +204,14 @@
                   }
                 }
               }
-            }
+            },
+            "description" : "OK"
           }
-        }
+        },
+        "summary" : "Tenant gestibili dall'amministratore",
+        "tags" : [ "Amministrazione RBAC" ]
       },
       "post" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Crea un tenant (solo amministratore globale)",
         "operationId" : "createTenant",
         "requestBody" : {
           "content" : {
@@ -182,48 +225,123 @@
         },
         "responses" : {
           "201" : {
-            "description" : "Created",
             "content" : {
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/TenantView"
                 }
               }
-            }
+            },
+            "description" : "Created"
           }
-        }
+        },
+        "summary" : "Crea un tenant (solo amministratore globale)",
+        "tags" : [ "Amministrazione RBAC" ]
       }
     },
-    "/api/v1/admin/roles" : {
+    "/api/v1/admin/tenants/{tenant}/users" : {
       "get" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Ruoli con i relativi permessi",
-        "operationId" : "roles",
+        "operationId" : "tenantUsers",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "tenant",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "pattern" : "^[A-Za-z0-9_-]{1,50}$"
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 50
+          }
+        }, {
+          "in" : "query",
+          "name" : "offset",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 0
+          }
+        } ],
         "responses" : {
           "200" : {
-            "description" : "OK",
             "content" : {
               "*/*" : {
                 "schema" : {
                   "type" : "array",
                   "items" : {
-                    "$ref" : "#/components/schemas/RoleView"
+                    "$ref" : "#/components/schemas/TenantUserView"
                   }
                 }
               }
-            }
+            },
+            "description" : "OK"
           }
-        }
-      },
-      "post" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Crea un ruolo (solo amministratore globale)",
-        "operationId" : "createRole",
+        },
+        "summary" : "Utenti con almeno un ruolo sul tenant, ordinati per username",
+        "tags" : [ "Amministrazione RBAC" ]
+      }
+    },
+    "/api/v1/admin/tenants/{tenant}/users/{username}/roles" : {
+      "put" : {
+        "operationId" : "replaceUserRoles",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "tenant",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "pattern" : "^[A-Za-z0-9_-]{1,50}$"
+          }
+        }, {
+          "in" : "path",
+          "name" : "username",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "pattern" : "^[A-Za-z0-9._@-]{1,150}$"
+          }
+        } ],
         "requestBody" : {
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/RoleCreateRequest"
+                "$ref" : "#/components/schemas/RoleAssignmentRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Sostituisce i ruoli dell'utente sul tenant (lista vuota = nessun ruolo)",
+        "tags" : [ "Amministrazione RBAC" ]
+      }
+    },
+    "/api/v1/admin/users" : {
+      "post" : {
+        "operationId" : "createUser",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UserCreateRequest"
               }
             }
           },
@@ -231,26 +349,26 @@
         },
         "responses" : {
           "201" : {
-            "description" : "Created",
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/RoleView"
+                  "$ref" : "#/components/schemas/UserView"
                 }
               }
-            }
+            },
+            "description" : "Created"
           }
-        }
+        },
+        "summary" : "Censisce un utente gia' presente nello IAM",
+        "tags" : [ "Amministrazione RBAC" ]
       }
     },
     "/api/v1/admin/users/{username}" : {
       "get" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Utente con le assegnazioni visibili all'amministratore",
         "operationId" : "user",
         "parameters" : [ {
-          "name" : "username",
           "in" : "path",
+          "name" : "username",
           "required" : true,
           "schema" : {
             "type" : "string",
@@ -259,24 +377,24 @@
         } ],
         "responses" : {
           "200" : {
-            "description" : "OK",
             "content" : {
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/UserView"
                 }
               }
-            }
+            },
+            "description" : "OK"
           }
-        }
+        },
+        "summary" : "Utente con le assegnazioni visibili all'amministratore",
+        "tags" : [ "Amministrazione RBAC" ]
       },
       "patch" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Attiva/disattiva o cambia email (solo globale, non su se stessi)",
         "operationId" : "updateUser",
         "parameters" : [ {
-          "name" : "username",
           "in" : "path",
+          "name" : "username",
           "required" : true,
           "schema" : {
             "type" : "string",
@@ -295,141 +413,71 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
             "content" : {
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/UserView"
                 }
               }
-            }
+            },
+            "description" : "OK"
           }
-        }
-      }
-    },
-    "/api/v1/admin/tenants/{tenant}/users" : {
-      "get" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Utenti con almeno un ruolo sul tenant, ordinati per username",
-        "operationId" : "tenantUsers",
-        "parameters" : [ {
-          "name" : "tenant",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "pattern" : "^[A-Za-z0-9_-]{1,50}$"
-          }
-        }, {
-          "name" : "limit",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int32",
-            "default" : 50
-          }
-        }, {
-          "name" : "offset",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int32",
-            "default" : 0
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/TenantUserView"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/permissions" : {
-      "get" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Catalogo dei permessi (sola lettura)",
-        "operationId" : "permissions",
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/PermissionView"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/audit" : {
-      "get" : {
-        "tags" : [ "Amministrazione RBAC" ],
-        "summary" : "Registro delle modifiche, piu' recenti prima (il delegato vede solo il proprio tenant)",
-        "operationId" : "audit",
-        "parameters" : [ {
-          "name" : "tenant",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "string",
-            "pattern" : "^[A-Za-z0-9_-]{1,50}$"
-          }
-        }, {
-          "name" : "limit",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int32",
-            "default" : 50
-          }
-        }, {
-          "name" : "offset",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int32",
-            "default" : 0
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/AuditEntry"
-                  }
-                }
-              }
-            }
-          }
-        }
+        },
+        "summary" : "Attiva/disattiva o cambia email (solo globale, non su se stessi)",
+        "tags" : [ "Amministrazione RBAC" ]
       }
     }
   },
   "components" : {
     "schemas" : {
+      "AuditEntry" : {
+        "type" : "object",
+        "properties" : {
+          "action" : {
+            "type" : "string"
+          },
+          "actor" : {
+            "type" : "string"
+          },
+          "actor_tenant" : {
+            "type" : "string"
+          },
+          "after_state" : {
+            "type" : "string"
+          },
+          "before_state" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "occurred_at" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "target" : {
+            "type" : "string"
+          },
+          "target_type" : {
+            "type" : "string"
+          },
+          "tenant_id" : {
+            "type" : "string"
+          }
+        }
+      },
+      "PermissionView" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          }
+        }
+      },
       "RoleAssignmentRequest" : {
         "type" : "object",
         "properties" : {
@@ -444,121 +492,6 @@
           }
         },
         "required" : [ "roles" ]
-      },
-      "UserView" : {
-        "type" : "object",
-        "properties" : {
-          "username" : {
-            "type" : "string"
-          },
-          "email" : {
-            "type" : "string"
-          },
-          "active" : {
-            "type" : "boolean"
-          },
-          "assignments" : {
-            "type" : "object",
-            "additionalProperties" : {
-              "type" : "array",
-              "items" : {
-                "type" : "string"
-              },
-              "uniqueItems" : true
-            }
-          }
-        }
-      },
-      "RoleUpdateRequest" : {
-        "type" : "object",
-        "properties" : {
-          "description" : {
-            "type" : "string",
-            "maxLength" : 255,
-            "minLength" : 0
-          },
-          "permissions" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string",
-              "pattern" : "^[a-z0-9_-]+:[a-z0-9_-]+$"
-            },
-            "maxItems" : 200,
-            "minItems" : 0
-          },
-          "version" : {
-            "type" : "integer",
-            "format" : "int32"
-          }
-        },
-        "required" : [ "permissions", "version" ]
-      },
-      "RoleView" : {
-        "type" : "object",
-        "properties" : {
-          "code" : {
-            "type" : "string"
-          },
-          "description" : {
-            "type" : "string"
-          },
-          "system" : {
-            "type" : "boolean"
-          },
-          "version" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "permissions" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string"
-            },
-            "uniqueItems" : true
-          }
-        }
-      },
-      "UserCreateRequest" : {
-        "type" : "object",
-        "properties" : {
-          "username" : {
-            "type" : "string",
-            "pattern" : "^[A-Za-z0-9._@-]{1,150}$"
-          },
-          "email" : {
-            "type" : "string",
-            "format" : "email",
-            "maxLength" : 255,
-            "minLength" : 0
-          }
-        },
-        "required" : [ "username" ]
-      },
-      "TenantCreateRequest" : {
-        "type" : "object",
-        "properties" : {
-          "code" : {
-            "type" : "string",
-            "pattern" : "^[A-Za-z0-9_-]{1,50}$"
-          },
-          "description" : {
-            "type" : "string",
-            "maxLength" : 255,
-            "minLength" : 0
-          }
-        },
-        "required" : [ "code" ]
-      },
-      "TenantView" : {
-        "type" : "object",
-        "properties" : {
-          "code" : {
-            "type" : "string"
-          },
-          "description" : {
-            "type" : "string"
-          }
-        }
       },
       "RoleCreateRequest" : {
         "type" : "object",
@@ -576,13 +509,126 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "pattern" : "^[a-z0-9_-]+:[a-z0-9_-]+$"
+              "pattern" : "^[a-z0-9]+\\.[a-z0-9]+\\.[a-z0-9]+$"
             },
             "maxItems" : 200,
             "minItems" : 0
           }
         },
         "required" : [ "code", "permissions" ]
+      },
+      "RoleUpdateRequest" : {
+        "type" : "object",
+        "properties" : {
+          "description" : {
+            "type" : "string",
+            "maxLength" : 255,
+            "minLength" : 0
+          },
+          "permissions" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "pattern" : "^[a-z0-9]+\\.[a-z0-9]+\\.[a-z0-9]+$"
+            },
+            "maxItems" : 200,
+            "minItems" : 0
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int32",
+            "minimum" : 0
+          }
+        },
+        "required" : [ "permissions", "version" ]
+      },
+      "RoleView" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "permissions" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            },
+            "uniqueItems" : true
+          },
+          "system" : {
+            "type" : "boolean"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "TenantCreateRequest" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string",
+            "pattern" : "^[A-Za-z0-9_-]{1,50}$"
+          },
+          "description" : {
+            "type" : "string",
+            "maxLength" : 255,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "code" ]
+      },
+      "TenantUserView" : {
+        "type" : "object",
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "roles" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            },
+            "uniqueItems" : true
+          },
+          "username" : {
+            "type" : "string"
+          }
+        }
+      },
+      "TenantView" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          }
+        }
+      },
+      "UserCreateRequest" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "maxLength" : 255,
+            "minLength" : 0
+          },
+          "username" : {
+            "type" : "string",
+            "pattern" : "^[A-Za-z0-9._@-]{1,150}$"
+          }
+        },
+        "required" : [ "username" ]
       },
       "UserUpdateRequest" : {
         "type" : "object",
@@ -598,71 +644,26 @@
           }
         }
       },
-      "TenantUserView" : {
+      "UserView" : {
         "type" : "object",
         "properties" : {
-          "username" : {
-            "type" : "string"
+          "active" : {
+            "type" : "boolean"
+          },
+          "assignments" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "array",
+              "items" : {
+                "type" : "string"
+              },
+              "uniqueItems" : true
+            }
           },
           "email" : {
             "type" : "string"
           },
-          "active" : {
-            "type" : "boolean"
-          },
-          "roles" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string"
-            },
-            "uniqueItems" : true
-          }
-        }
-      },
-      "PermissionView" : {
-        "type" : "object",
-        "properties" : {
-          "code" : {
-            "type" : "string"
-          },
-          "description" : {
-            "type" : "string"
-          }
-        }
-      },
-      "AuditEntry" : {
-        "type" : "object",
-        "properties" : {
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "occurred_at" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "actor" : {
-            "type" : "string"
-          },
-          "actor_tenant" : {
-            "type" : "string"
-          },
-          "action" : {
-            "type" : "string"
-          },
-          "target_type" : {
-            "type" : "string"
-          },
-          "target" : {
-            "type" : "string"
-          },
-          "tenant_id" : {
-            "type" : "string"
-          },
-          "before_state" : {
-            "type" : "string"
-          },
-          "after_state" : {
+          "username" : {
             "type" : "string"
           }
         }
@@ -670,9 +671,9 @@
     },
     "securitySchemes" : {
       "sessionCookie" : {
-        "type" : "apiKey",
+        "in" : "cookie",
         "name" : "SESSION_ID",
-        "in" : "cookie"
+        "type" : "apiKey"
       }
     }
   }

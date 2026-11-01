@@ -19,7 +19,10 @@ ms-authz must adapt", punti 1-8; prima consumatrice OpenDevTrack):
 7. stream di eventi: solo configurazione (`spring.mvc.async.request-timeout: -1`), documentata;
 8. `server.forward-headers-strategy=framework` documentato, origine pubblica del BFF ammessa come `return`.
 
-Verifiche: 25 test (`mvn install`, nessun Docker richiesto; `BffContractTest` prova il contratto via HTTP), poi
+Verifiche: 42 test con `mvn install`. `BffContractTest` prova il contratto via HTTP; `RbacPostgresTest` e
+`BffRedisTest` usano PostgreSQL e Redis veri con Testcontainers (serve Docker, altrimenti sono saltati);
+`AdminOpenApiTest` rigenera la definizione OpenAPI e fallisce se `docs/authz-admin-openapi-spec.json` non è
+aggiornata. Il 2026-10-31, prova
 end-to-end con Keycloak, Redis e PostgreSQL reali e l'app demo: kit `conformance:bff` di Quadrava 13/13 con e senza
 sessione, ultimo tenant ricordato tra due login, logout con `id_token_hint`, revoca delle sessioni, escalation del
 delegato bloccata. Trovato e corretto nell'end-to-end: con Boot 4 le proprietà `spring.session.redis.*` sono
@@ -71,9 +74,8 @@ ignorate (la revoca rispondeva sempre `501`); si usano `spring.session.data.redi
 
 ## Prossimi passi suggeriti
 
-1. Test di integrazione con Testcontainers (PostgreSQL per `authz-rbac`, Redis per la serializzazione della sessione).
-2. Export della definizione OpenAPI dell'API di amministrazione nel build (springdoc in un'app di test), per
-   aggiornare `docs/authz-admin-openapi-spec.json` (oggi aggiornato a mano dalla 1.x).
-3. Back-channel logout OIDC: revoca delle sessioni quando l'utente esce dallo IAM da un'altra applicazione.
-4. Retention e protezione del registro di audit (GDPR).
-5. Valutare un BOM (`authz-bom`) se le applicazioni consumatrici diventano più di una.
+1. Back-channel logout OIDC: revoca delle sessioni quando l'utente esce dallo IAM da un'altra applicazione.
+2. Retention e protezione del registro di audit (GDPR).
+3. Valutare un BOM (`authz-bom`) se le applicazioni consumatrici diventano più di una.
+4. Il `type` dei Problem dell'API di amministrazione è ancora `urn:problem:auth-service:<codice>` (nome della 1.x):
+   cambiarlo è una modifica del contratto, da concordare con chi lo usa.

@@ -1,4 +1,4 @@
-# Build e test a ogni push e pull request (i test non richiedono Docker).
+# Build e test a ogni push e pull request; i test di integrazione usano il Docker del runner (Testcontainers).
 name: CI
 
 on:

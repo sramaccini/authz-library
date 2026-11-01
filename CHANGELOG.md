@@ -4,7 +4,19 @@ Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Sema
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Test di integrazione con Testcontainers: `RbacPostgresTest` (PostgreSQL 17: migrazioni con la history propria,
+  vincolo sul formato dei permessi, tenant del login e ultimo tenant usato, regole del delegato, audit, blocco
+  ottimistico dei ruoli) e `BffRedisTest` (Redis 7.4: sessione indicizzata, revoca di tutte le sessioni di un utente,
+  sessione di un'altra versione). Richiedono Docker; senza, sono saltati.
+- `docs/authz-admin-openapi-spec.json` generata da springdoc (solo nei test) e verificata dal build:
+  `AdminOpenApiTest` fallisce se la definizione non corrisponde al controller.
+
 ### Corretto
+
+- `docs/authz-admin-openapi-spec.json` era ferma alla 1.x in alcuni punti: formato dei permessi `a:b` invece di
+  `dominio.risorsa.azione`, permessi globali `*-global`, vincolo `minimum: 0` su `version` mancante.
 
 - Una sessione Redis scritta da un'altra versione (classi rinominate, come `it.logicware.authz` → `com.logicwarez.authz`,
   o un altro `serialVersionUID` di `SessionContext`) faceva rispondere `500` a ogni richiesta dell'utente. Ora

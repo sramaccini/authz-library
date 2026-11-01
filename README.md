@@ -122,6 +122,15 @@ Errori del login → redirect a `authz.bff.frontend.login-failure-url?error=acce
 API `/api/v1/admin/**` di `authz-rbac`, descritta in [docs/authz-admin-openapi-spec.json](docs/authz-admin-openapi-spec.json).
 Tutte le chiamate passano dal BFF con il cookie di sessione; le scritture vogliono l'header `X-XSRF-TOKEN`.
 
+La definizione è generata da springdoc sul controller e verificata dal build (`AdminOpenApiTest`): se il controller
+cambia e il file no, `mvn verify` fallisce. Per rigenerarla:
+
+```bash
+mvn -pl authz-rbac -am test -Dtest=AdminOpenApiTest -Dsurefire.failIfNoSpecifiedTests=false -Dopenapi.update=true
+```
+
+springdoc è solo una dipendenza di test: le applicazioni che vogliono anche `/v3/api-docs` lo aggiungono loro.
+
 | Chi | Permesso | Può |
 |---|---|---|
 | Amministratore delegato (`TENANT_ADMIN`) | `authz.rbac.manage`, `authz.session.revoke` | censire utenti, assegnare/togliere ruoli e revocare sessioni **solo nel tenant della propria sessione**, leggere l'audit del proprio tenant |
@@ -152,8 +161,12 @@ solo quelle aperte sul tenant dell'amministratore, con `authz.session.revokeglob
 ```bash
 cp .env.example .env   # poi sostituire i segnaposto
 docker compose up -d   # PostgreSQL 17, Redis 7.4, Keycloak 26 (realm "enterprise" importato)
-mvn install            # build e test di librerie ed esempio (i test non richiedono Docker)
+mvn install            # build e test di librerie ed esempio
 ```
+
+I test di integrazione avviano con Testcontainers un PostgreSQL 17 (`RbacPostgresTest`: migrazioni, risoluzione al
+login, regole dell'amministrazione, audit) e un Redis 7.4 (`BffRedisTest`: sessione indicizzata, revoca, sessioni
+di un'altra versione). Richiedono Docker in esecuzione; senza Docker vengono saltati e gli altri test girano lo stesso.
 
 ```bash
 set -a; . ./.env; set +a
@@ -191,5 +204,3 @@ un percorso in formato corto 8.3 dove il JDK non riesce a creare il socket AF_UN
 - **Serializzazione JDK** degli attributi di sessione (`TolerantSessionSerializer`): un aggiornamento che cambia le
   classi in sessione chiude le sessioni aperte, senza errori (l'attributo illeggibile è ignorato e l'utente rifà il
   login).
-- **Non ancora portato dalla 1.x**: test di integrazione con Testcontainers (PostgreSQL, Redis) ed export della
-  definizione OpenAPI nel build.

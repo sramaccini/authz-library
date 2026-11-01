@@ -29,6 +29,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.config.annotation.web.http.EnableSpringHttpSession;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,24 +42,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Le regole di contracts/bff.yaml e contracts/authz.yaml di Quadrava, provate via HTTP come le prova il kit
  * {@code npm run conformance:bff}: server vero, cookie gestiti a mano, redirect non seguiti.
  */
-@SpringBootTest(classes = BffContractTest.TestApp.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {
-                "server.forward-headers-strategy=framework",
-                "authz.bff.frontend.login-success-url=http://app.test/home",
-                "authz.bff.frontend.login-failure-url=http://app.test/login-error",
-                "authz.bff.frontend.post-logout-url=http://app.test/bye",
-                "authz.bff.frontend.allowed-origins=http://app.test",
-                "authz.bff.login-rate-limit.enabled=false",
-                "spring.security.oauth2.client.registration.iam.provider=iam",
-                "spring.security.oauth2.client.registration.iam.client-id=bff",
-                "spring.security.oauth2.client.registration.iam.client-secret=test-secret",
-                "spring.security.oauth2.client.registration.iam.authorization-grant-type=authorization_code",
-                "spring.security.oauth2.client.registration.iam.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
-                "spring.security.oauth2.client.registration.iam.scope=openid",
-                "spring.security.oauth2.client.provider.iam.authorization-uri=http://iam.test/auth",
-                "spring.security.oauth2.client.provider.iam.token-uri=http://iam.test/token",
-                "spring.security.oauth2.client.provider.iam.jwk-set-uri=http://iam.test/certs",
-                "spring.security.oauth2.client.provider.iam.user-name-attribute=sub"})
+@SpringBootTest(classes = BffContractTest.TestApp.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@TestPropertySource(locations = "classpath:bff-test.properties")
 class BffContractTest {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();

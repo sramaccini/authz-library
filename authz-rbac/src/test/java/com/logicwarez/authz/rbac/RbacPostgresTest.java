@@ -10,8 +10,11 @@ import com.logicwarez.authz.rbac.admin.AdminApi.RoleUpdateRequest;
 import com.logicwarez.authz.rbac.admin.AdminProblem;
 import com.logicwarez.authz.rbac.admin.AdminScope;
 import com.logicwarez.authz.rbac.admin.RbacAdminService;
+import com.logicwarez.authz.rbac.directory.TenantDirectory;
 import com.logicwarez.authz.rbac.service.AuthorizationContext;
 import com.logicwarez.authz.rbac.service.AuthorizationService;
+import com.logicwarez.authz.rbac.token.PersonalAccessTokens;
+import com.logicwarez.authz.session.PersonalAccessTokenVerifier;
 import com.logicwarez.authz.session.UserNotAuthorizedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Senza Docker il test viene saltato.
  */
 @Testcontainers(disabledWithoutDocker = true)
-@SpringBootTest(classes = RbacPostgresTest.TestApp.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(classes = RbacPostgresTest.TestApp.class, webEnvironment = SpringBootTest.WebEnvironment.NONE,
+        properties = {"authz.rbac.tokens.enabled=true", "authz.rbac.tokens.max-per-user=2"})
 class RbacPostgresTest {
 
     @Container
@@ -50,13 +54,19 @@ class RbacPostgresTest {
     @Autowired
     RbacAdminService admin;
 
+    @Autowired
+    TenantDirectory directory;
+
+    @Autowired
+    PersonalAccessTokens tokens;
+
     // --- Migrazioni ---
 
     @Test
     void migrazioniNellaHistoryPropria() {
         List<String> versions = jdbc.sql("SELECT version FROM authz_schema_history WHERE success ORDER BY installed_rank")
                 .query(String.class).list();
-        assertThat(versions).containsExactly("1", "2", "3");
+        assertThat(versions).containsExactly("1", "2", "3", "4");
         assertThat(jdbc.sql("SELECT permission_code FROM app_permission ORDER BY 1").query(String.class).list())
                 .containsExactly("authz.rbac.manage", "authz.rbac.manageglobal",
                         "authz.session.revoke", "authz.session.revokeglobal");
@@ -111,6 +121,85 @@ class RbacPostgresTest {
 
         jdbc.sql("UPDATE app_user SET is_active = FALSE WHERE username = ?").param(user).update();
         assertThatThrownBy(() -> authorization.resolve(user, a)).isInstanceOf(UserNotAuthorizedException.class);
+    }
+
+    @Test
+    void risoluzionePerUnTokenNonCambiaLUltimoTenant() {
+        String a = tenant("A"), b = tenant("B");
+        String user = user();
+        String role = role("demo.item.read");
+        assign(user, role, a);
+        assign(user, role, b);
+        authorization.resolve(user, a);
+
+        assertThat(authorization.resolve(user, b, false).tenantId()).isEqualTo(b);
+        assertThat(authorization.resolve(user, null).tenantId()).as("ultimo tenant invariato").isEqualTo(a);
+    }
+
+    // --- Directory del tenant ---
+
+    @Test
+    void directorySoloUtentiAttiviConUnRuoloSulTenant() {
+        String a = tenant("A"), b = tenant("B");
+        String role = role("demo.item.read");
+        String marker = suffix();
+        String mario = user("mario_" + marker), maria = user("maria_" + marker), altro = user("mariano_" + marker);
+        String inattivo = user("marietto_" + marker);
+        assign(mario, role, a);
+        assign(maria, role, a);
+        assign(altro, role, b);
+        assign(inattivo, role, a);
+        jdbc.sql("UPDATE app_user SET is_active = FALSE WHERE username = ?").param(inattivo).update();
+
+        assertThat(directory.search(a, "MAR", 50)).extracting(TenantDirectory.DirectoryUser::username)
+                .containsExactly(maria, mario);
+        assertThat(directory.search(a, marker, 1)).hasSize(1);
+        assertThat(directory.search(a, "%", 50)).as("caratteri jolly letterali").isEmpty();
+        assertThat(directory.find(a, mario)).hasValueSatisfying(u -> assertThat(u.email()).isEqualTo(mario + "@example.org"));
+        assertThat(directory.find(a, altro)).isEmpty();
+        assertThat(directory.find(a, inattivo)).isEmpty();
+    }
+
+    // --- Token personali ---
+
+    @Test
+    void tokenPersonaliCreatiVerificatiERevocati() {
+        String user = user();
+        PersonalAccessTokens.CreatedToken created = tokens.create(user, "CI", 30);
+        assertThat(created.token()).startsWith(PersonalAccessTokenVerifier.PREFIX);
+        assertThat(jdbc.sql("SELECT count(*) FROM personal_access_token WHERE token_hash = ?").param(created.token())
+                .query(Long.class).single()).as("solo l'hash nel database").isZero();
+
+        assertThat(tokens.verify(created.token())).hasValueSatisfying(o -> assertThat(o.username()).isEqualTo(user));
+        assertThat(tokens.verify(created.token() + "x")).isEmpty();
+        assertThat(tokens.list(user)).singleElement().satisfies(t -> {
+            assertThat(t.name()).isEqualTo("CI");
+            assertThat(created.token()).startsWith(t.hint());
+            assertThat(t.lastUsedAt()).isNotNull();
+        });
+
+        tokens.revoke(user, created.id());
+        assertThat(tokens.verify(created.token())).isEmpty();
+        assertThat(tokens.list(user)).isEmpty();
+        assertThatThrownBy(() -> tokens.revoke(user, created.id()))
+                .isInstanceOfSatisfying(PersonalAccessTokens.TokenException.class, e -> assertThat(e.status()).isEqualTo(404));
+        assertThat(jdbc.sql("SELECT count(*) FROM rbac_audit WHERE actor = ? AND action IN ('TOKEN_CREATED', 'TOKEN_REVOKED')")
+                .param(user).query(Long.class).single()).isEqualTo(2);
+    }
+
+    @Test
+    void tokenPersonaliLimitiEUtentiInattivi() {
+        String user = user();
+        assertTokenProblem(() -> tokens.create(user, "lungo", 400), 400);
+        String first = tokens.create(user, "uno", 10).token();
+        tokens.create(user, "due", 10);
+        assertTokenProblem(() -> tokens.create(user, "tre", 10), 409);
+        assertThatThrownBy(() -> tokens.revoke(user(), tokens.list(user).getFirst().id()))
+                .as("token di un altro utente").isInstanceOf(PersonalAccessTokens.TokenException.class);
+
+        jdbc.sql("UPDATE app_user SET is_active = FALSE WHERE username = ?").param(user).update();
+        assertThat(tokens.verify(first)).isEmpty();
+        assertTokenProblem(() -> tokens.create(user, "quattro", 10), 403);
     }
 
     // --- Amministrazione ---
@@ -168,7 +257,10 @@ class RbacPostgresTest {
     }
 
     private String user() {
-        String username = "utente-" + suffix();
+        return user("utente-" + suffix());
+    }
+
+    private String user(String username) {
         jdbc.sql("INSERT INTO app_user (username, email) VALUES (?, ?)").param(username).param(username + "@example.org")
                 .update();
         return username;
@@ -199,6 +291,11 @@ class RbacPostgresTest {
 
     private static void assertProblem(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, String code) {
         assertThatThrownBy(call).isInstanceOfSatisfying(AdminProblem.class, p -> assertThat(p.code()).isEqualTo(code));
+    }
+
+    private static void assertTokenProblem(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, int status) {
+        assertThatThrownBy(call).isInstanceOfSatisfying(PersonalAccessTokens.TokenException.class,
+                e -> assertThat(e.status()).isEqualTo(status));
     }
 
     @SpringBootConfiguration

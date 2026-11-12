@@ -1,7 +1,10 @@
 package com.logicwarez.authz.bff;
 
 import java.io.IOException;
+import java.time.Clock;
 
+import com.logicwarez.authz.session.AuthorizationResolver;
+import com.logicwarez.authz.session.PersonalAccessTokenVerifier;
 import com.logicwarez.authz.session.SessionContext;
 import com.logicwarez.authz.session.SessionContextConfigurer;
 import jakarta.servlet.FilterChain;
@@ -21,6 +24,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -57,7 +61,9 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
         // API per una SPA: mai redirect alla pagina di login, sempre 401
         http.exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
         // spa(): token letto dall'header X-XSRF-TOKEN; il cookie XSRF-TOKEN non e' HttpOnly perche' la pagina lo legge
-        http.csrf(csrf -> csrf.spa().csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()));
+        // Le richieste autenticate con un token (BearerTokenFilter) non portano credenziali implicite: niente CSRF
+        http.csrf(csrf -> csrf.spa().csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                .ignoringRequestMatchers(request -> request.getAttribute(BearerTokenFilter.ATTRIBUTE) != null));
         // POST /logout e' di BffControllers (risposta JSON con l'indirizzo di logout sullo IAM)
         http.logout(logout -> logout.disable());
     }
@@ -69,7 +75,16 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
         http.addFilterAfter(new OriginCheckFilter(context.getBean(LoginSupport.OriginPolicy.class)),
                 SecurityContextHolderFilter.class);
         http.addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class);
-        http.addFilterAfter(new PermissionsVersionFilter(), CsrfFilter.class);
+        http.addFilterAfter(new PermissionsVersionFilter(context.getBean(EffectivePermissions.class)), CsrfFilter.class);
+        if (properties.bearer().enabled()) {
+            http.addFilterBefore(new BearerTokenFilter(properties,
+                    () -> context.containsBean(BffAutoConfiguration.BEARER_DECODER)
+                            ? context.getBean(BffAutoConfiguration.BEARER_DECODER, JwtDecoder.class) : null,
+                    context.getBeanProvider(PersonalAccessTokenVerifier.class),
+                    context.getBean(AuthorizationResolver.class),
+                    context.getBeanProvider(StringRedisTemplate.class).getIfAvailable(), Clock.systemUTC()),
+                    OriginCheckFilter.class);
+        }
         if (properties.loginRateLimit().enabled()) {
             http.addFilterBefore(new LoginRateLimitFilter(context.getBeanProvider(StringRedisTemplate.class)
                     .getIfAvailable(), properties.loginRateLimit()), OAuth2AuthorizationRequestRedirectFilter.class);
@@ -94,7 +109,7 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
         @Override
         protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
                 throws ServletException, IOException {
-            if (!policy.isAllowed(request)) {
+            if (request.getAttribute(BearerTokenFilter.ATTRIBUTE) == null && !policy.isAllowed(request)) {
                 problem(response, HttpStatus.FORBIDDEN, "Origin not allowed");
                 return;
             }
@@ -121,12 +136,18 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
     /** Versione dei permessi della sessione su ogni risposta: quando cambia, la UI ricarica i permessi. */
     static final class PermissionsVersionFilter extends OncePerRequestFilter {
 
+        private final EffectivePermissions permissions;
+
+        PermissionsVersionFilter(EffectivePermissions permissions) {
+            this.permissions = permissions;
+        }
+
         @Override
         protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
                 throws ServletException, IOException {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             if (authentication != null && authentication.getPrincipal() instanceof SessionContext session) {
-                response.setHeader(AuthzController.VERSION_HEADER, session.permissionsVersion());
+                response.setHeader(AuthzController.VERSION_HEADER, permissions.version(session));
             }
             chain.doFilter(request, response);
         }

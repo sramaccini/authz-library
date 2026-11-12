@@ -1,6 +1,6 @@
 package com.logicwarez.authz.rbac.repository;
 
-import org.springframework.jdbc.core.simple.JdbcClient;
+import com.logicwarez.authz.rbac.RbacJdbc;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -45,9 +45,9 @@ public class AuthorizationRepository {
                AND last_tenant_id IS DISTINCT FROM :tenant
             """;
 
-    private final JdbcClient jdbc;
+    private final RbacJdbc jdbc;
 
-    public AuthorizationRepository(JdbcClient jdbc) {
+    public AuthorizationRepository(RbacJdbc jdbc) {
         this.jdbc = jdbc;
     }
 

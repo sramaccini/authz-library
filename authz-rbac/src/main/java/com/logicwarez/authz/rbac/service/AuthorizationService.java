@@ -30,6 +30,15 @@ public class AuthorizationService {
      */
     @Transactional
     public AuthorizationContext resolve(String username, String requestedTenant) {
+        return resolve(username, requestedTenant, true);
+    }
+
+    /**
+     * @param remember ricordare il tenant per il login successivo; false per le richieste con un token, che si
+     *                 risolvono a ogni chiamata e non cambiano il tenant con cui l'utente entra dal browser
+     */
+    @Transactional
+    public AuthorizationContext resolve(String username, String requestedTenant, boolean remember) {
         ActiveUser user = repository.findActiveUser(username)
                 .orElseThrow(() -> new UserNotAuthorizedException("Utente non trovato o non attivo"));
 
@@ -46,7 +55,9 @@ public class AuthorizationService {
         }
 
         String tenant = selectTenant(requestedTenant, user.lastTenantId(), tenants);
-        repository.updateLastTenant(user.id(), tenant);
+        if (remember) {
+            repository.updateLastTenant(user.id(), tenant);
+        }
 
         SortedSet<String> roles = new TreeSet<>();
         SortedSet<String> permissions = new TreeSet<>();

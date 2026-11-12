@@ -6,7 +6,7 @@ L'utente è Simone. Lavora in italiano, tono tecnico.
 
 ## Stato
 
-**2026-11-01 — 2.1.0** (test di integrazione, OpenAPI generata, sessioni di altre versioni, errori in inglese; 2.0.0 e 2.0.1 il 2026-10-31), groupId e package `com.logicwarez.authz` (le pubblicazioni dello stesso giorno con `com.enterprise.authz` 2.0.0 e `it.logicware.authz` 3.0.0 sono ritirate). Repository github.com/sramaccini/authz-library, branch `master`. Le librerie
+**2026-11-12 — 2.2.0** (richieste di OpenDevTrack: permessi dell'applicazione, schema dedicato, accesso con token, directory del tenant, token personali; 2.1.0 il 2026-11-01, 2.0.0 e 2.0.1 il 2026-10-31), groupId e package `com.logicwarez.authz` (le pubblicazioni dello stesso giorno con `com.enterprise.authz` 2.0.0 e `it.logicware.authz` 3.0.0 sono ritirate). Repository github.com/sramaccini/authz-library, branch `master`. Le librerie
 (`authz-session`, `authz-rbac`, `authz-bff`, esempio `examples/authz-demo-app`) hanno sostituito i servizi della 1.x,
 eliminati su indicazione dell'utente (erano in `legacy/`; restano nella storia git fino al commit `0074f15`).
 
@@ -19,8 +19,15 @@ ms-authz must adapt", punti 1-8; prima consumatrice OpenDevTrack):
 7. stream di eventi: solo configurazione (`spring.mvc.async.request-timeout: -1`), documentata;
 8. `server.forward-headers-strategy=framework` documentato, origine pubblica del BFF ammessa come `return`.
 
-Verifiche: 42 test con `mvn install`. `BffContractTest` prova il contratto via HTTP; `RbacPostgresTest` e
-`BffRedisTest` usano PostgreSQL e Redis veri con Testcontainers (serve Docker, altrimenti sono saltati);
+Fatto il 2026-11-12, su richiesta di OpenDevTrack (`OpenDevTrack/docs/README.md`, richieste A1-A6; A3 era nella 2.1.0):
+A1 `PermissionContributor` (`EffectivePermissions` per capabilities, check e versione); A2 `authz.rbac.schema`
+(`RbacJdbc` qualifica le tabelle); A4 `authz.bff.bearer` (`BearerTokenFilter`, `TokenAuthentication` sottoclasse di
+`SessionAuthentication` perché OpenDevTrack controlla `instanceof SessionAuthentication`); A5 `TenantDirectory` e
+`authz.rbac.directory.permission`; A6 `authz.rbac.tokens` (migrazione `V4`, `PersonalAccessTokenVerifier`). Quando
+OpenDevTrack adotta la 2.2.0 può togliere i suoi `TenantUsers` e `BearerTokenSecurity`.
+
+Verifiche: 57 test con `mvn install`. `BffContractTest` e `BffBearerTest` provano il contratto via HTTP;
+`RbacPostgresTest`, `RbacSchemaTest`, `BffRedisTest` e `BffBearerRateLimitTest` usano PostgreSQL e Redis veri con Testcontainers (serve Docker, altrimenti sono saltati);
 `AdminOpenApiTest` rigenera la definizione OpenAPI e fallisce se `docs/authz-admin-openapi-spec.json` non è
 aggiornata. Il 2026-10-31, prova
 end-to-end con Keycloak, Redis e PostgreSQL reali e l'app demo: kit `conformance:bff` di Quadrava 13/13 con e senza

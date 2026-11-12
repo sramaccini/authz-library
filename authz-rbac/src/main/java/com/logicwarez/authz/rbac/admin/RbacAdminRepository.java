@@ -5,7 +5,7 @@ import com.logicwarez.authz.rbac.admin.AdminApi.PermissionView;
 import com.logicwarez.authz.rbac.admin.AdminApi.RoleView;
 import com.logicwarez.authz.rbac.admin.AdminApi.TenantUserView;
 import com.logicwarez.authz.rbac.admin.AdminApi.TenantView;
-import org.springframework.jdbc.core.simple.JdbcClient;
+import com.logicwarez.authz.rbac.RbacJdbc;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
@@ -35,9 +35,9 @@ public class RbacAdminRepository {
     record TenantUserRow(String username, String email, boolean active, String role) {
     }
 
-    private final JdbcClient jdbc;
+    private final RbacJdbc jdbc;
 
-    public RbacAdminRepository(JdbcClient jdbc) {
+    public RbacAdminRepository(RbacJdbc jdbc) {
         this.jdbc = jdbc;
     }
 

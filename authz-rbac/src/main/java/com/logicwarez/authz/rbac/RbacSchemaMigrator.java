@@ -3,6 +3,7 @@ package com.logicwarez.authz.rbac;
 import javax.sql.DataSource;
 
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.springframework.beans.factory.InitializingBean;
 
 /**
@@ -13,10 +14,12 @@ public class RbacSchemaMigrator implements InitializingBean {
 
     private final DataSource dataSource;
     private final RbacProperties.Flyway properties;
+    private final String schema;
 
-    public RbacSchemaMigrator(DataSource dataSource, RbacProperties.Flyway properties) {
+    public RbacSchemaMigrator(DataSource dataSource, RbacProperties.Flyway properties, String schema) {
         this.dataSource = dataSource;
         this.properties = properties;
+        this.schema = schema == null || schema.isBlank() ? null : schema;
     }
 
     @Override
@@ -24,15 +27,18 @@ public class RbacSchemaMigrator implements InitializingBean {
         if (!properties.enabled()) {
             return;
         }
-        Flyway.configure()
+        FluentConfiguration flyway = Flyway.configure()
                 .dataSource(dataSource)
                 .locations(properties.locations().toArray(String[]::new))
                 .table(properties.table())
                 .outOfOrder(properties.outOfOrder())
                 // Schema gia' usato dall'applicazione: si parte da zero senza rifiutare uno schema non vuoto
                 .baselineOnMigrate(true)
-                .baselineVersion("0")
-                .load()
-                .migrate();
+                .baselineVersion("0");
+        if (schema != null) {
+            // Schema creato se manca; history e tabelle in quello schema (search_path delle migrazioni)
+            flyway.schemas(schema).defaultSchema(schema);
+        }
+        flyway.load().migrate();
     }
 }

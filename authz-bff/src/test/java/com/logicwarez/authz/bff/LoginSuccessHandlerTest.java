@@ -34,7 +34,9 @@ class LoginSuccessHandlerTest {
             new BffProperties.Session(Duration.ofHours(10)),
             new BffProperties.Frontend(URI.create("https://app/"), URI.create("https://app/login-error"),
                     URI.create("https://app/"), List.of("https://app")),
-            new BffProperties.LoginRateLimit(true, 20, Duration.ofMinutes(1), "rl:"));
+            new BffProperties.LoginRateLimit(true, 20, Duration.ofMinutes(1), "rl:"),
+            new BffProperties.Bearer(false, List.of(), null, List.of(), "X-Tenant",
+                    new BffProperties.RateLimit(true, 600, Duration.ofMinutes(1), "rb:")));
 
     private MockHttpServletResponse login(AuthorizationResolver resolver, MockHttpServletRequest request)
             throws Exception {

@@ -8,12 +8,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 import com.logicwarez.authz.session.AuthorizationResolver;
+import com.logicwarez.authz.session.PermissionContributor;
 import com.logicwarez.authz.session.SessionContext;
 import com.logicwarez.authz.session.UserNotAuthorizedException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -212,6 +215,28 @@ class BffContractTest {
     }
 
     @Test
+    void permessiDeiContributorDellApplicazione() throws Exception {
+        assertThat(send("GET", "/test/signin?user=carla.verdi", null).statusCode()).isEqualTo(204);
+        HttpResponse<String> r = send("GET", "/authz/capabilities?app=demo", null);
+        JsonNode body = json(r);
+        assertThat(body.get("permissions").toString()).isEqualTo("[\"demo.item.read\",\"demo.project.view\"]");
+        // Stessa versione nell'elenco e sulle altre risposte, altrimenti la UI ricaricherebbe i permessi di continuo
+        assertThat(send("GET", "/bff/user", null).headers().firstValue("X-Permissions-Version"))
+                .hasValue(body.get("version").asString());
+
+        JsonNode results = json(write("POST", "/authz/check", """
+                {"checks":[{"permission":"demo.project.edit","resource":{"type":"project","id":"P1"}},
+                           {"permission":"demo.project.edit","resource":{"type":"project","id":"P2"}},
+                           {"permission":"demo.project.edit"},
+                           {"permission":"demo.project.view","resource":{"type":"project","id":"P2"}}]}"""))
+                .get("results");
+        assertThat(results.get(0).get("allowed").asBoolean()).isTrue();
+        assertThat(results.get(1).get("allowed").asBoolean()).isFalse();
+        assertThat(results.get(2).get("allowed").asBoolean()).as("senza risorsa decide la sessione").isFalse();
+        assertThat(results.get(3).get("allowed").asBoolean()).as("contributor muto: permesso effettivo").isTrue();
+    }
+
+    @Test
     void checkInBatch() throws Exception {
         signIn();
         HttpResponse<String> r = write("POST", "/authz/check", """
@@ -309,6 +334,23 @@ class BffContractTest {
                 case "TENANT_B" -> new AuthorizationResolver.Resolved(username, username + "@example.org", "TENANT_B",
                         tenants, List.of("EDITOR"), List.of("demo.item.read", "demo.item.edit"));
                 default -> throw new UserNotAuthorizedException("Nessun ruolo sul tenant");
+            };
+        }
+
+        /** Permessi per progetto, come quelli di un'applicazione: un permesso in piu' a carla.verdi, edit solo su P1. */
+        @Bean
+        PermissionContributor projectPermissions() {
+            return new PermissionContributor() {
+                @Override
+                public Collection<String> permissions(SessionContext session) {
+                    return session.username().equals("carla.verdi") ? List.of("demo.project.view") : List.of();
+                }
+
+                @Override
+                public Optional<Boolean> check(SessionContext session, String permission, Resource resource) {
+                    return resource.type().equals("project") && permission.equals("demo.project.edit")
+                            ? Optional.of(resource.id().equals("P1")) : Optional.empty();
+                }
             };
         }
 

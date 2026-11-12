@@ -2,6 +2,44 @@
 
 Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Semantic Versioning](https://semver.org/lang/it/).
 
+## [2.2.0] - 2026-11-12
+
+Richieste di OpenDevTrack (A1, A2, A4, A5, A6; A3 era già nella 2.1.0). Tutto facoltativo: senza nuove proprietà il
+comportamento è quello della 2.1.0, a parte la migrazione `V4` applicata da `authz-rbac`. Nessuna modifica ai
+contratti `bff.yaml` e `authz.yaml`.
+
+### Aggiunto
+
+- **Permessi dell'applicazione** (A1): i bean `PermissionContributor` (`authz-session`) aggiungono permessi alla
+  sessione (`permissions(session)`, per esempio i ruoli di progetto) e decidono i controlli su una risorsa
+  (`check(session, permission, resource)`; il primo che risponde decide). `/authz/capabilities`, `/authz/check` e
+  `X-Permissions-Version` usano lo stesso insieme effettivo, così la versione cambia quando cambiano i permessi
+  aggiunti dall'applicazione. Senza contributor la versione resta quella della 2.1.0.
+- **Schema dedicato** (A2): `authz.rbac.schema: authz` mette tabelle e history delle migrazioni nello schema indicato
+  (creato da Flyway se manca) e qualifica tutte le query della libreria; lo schema dell'applicazione resta suo.
+- **Accesso con token** (A4): con `authz.bff.bearer.enabled: true` le richieste su `authz.bff.bearer.paths`
+  (predefinito `/api/**`) possono usare `Authorization: Bearer <access token>` dello IAM al posto del cookie: firma,
+  scadenza e issuer verificati (issuer della registrazione OIDC o `authz.bff.bearer.issuer-uri`), client ammessi in
+  `allowed-clients` (claim `azp`, vuoto = tutti), tenant dall'header `X-Tenant` (predefinito l'ultimo usato, che il
+  token non cambia), nessuna sessione creata, niente CSRF. Cookie e token insieme → `400`; token non valido o scaduto
+  → `401` con `WWW-Authenticate: Bearer error="invalid_token"`; utente o tenant non autorizzato → `403`; limite per
+  utente su Redis (`rate-limit.max-requests` in `rate-limit.window`, predefinito 600 al minuto) → `429` con
+  `Retry-After`. L'`Authentication` è un `TokenAuthentication` (sottoclasse di `SessionAuthentication`, con
+  `client()`): `@AuthenticationPrincipal SessionContext` e `@PreAuthorize` funzionano come con la sessione.
+- **Directory del tenant** (A5): `TenantDirectory` (utenti attivi con almeno un ruolo sul tenant, `search` e
+  `find`) e, con `authz.rbac.directory.permission: <permesso>`, `GET /api/v1/directory/users?q=&limit=` sul tenant
+  della sessione.
+- **Token di accesso personali** (A6): con `authz.rbac.tokens.enabled: true`, `GET/POST /api/v1/tokens` e
+  `DELETE /api/v1/tokens/{id}` (solo da una sessione del browser). Il token `pat_…` si vede solo alla creazione; nel
+  database c'è il suo SHA-256. Durata massima `max-days` (366, predefinita 90), al massimo `max-per-user` (20) token
+  attivi, creazione e revoca nell'audit, token invalidati se l'utente è disattivato. Con l'accesso con token attivo
+  il BFF li accetta come bearer (`client()` = `personal-access-token`).
+- Migrazione `V4__personal_access_tokens.sql` (tabella `personal_access_token`).
+- `AuthorizationResolver.resolveForToken(username, tenant)`, predefinito uguale a `resolve`; quello di `authz-rbac`
+  non aggiorna l'ultimo tenant usato.
+- Test: `BffBearerTest`, `BffBearerRateLimitTest` (Redis), `RbacSchemaTest` (PostgreSQL), contributor in
+  `BffContractTest`, directory e token in `RbacPostgresTest`.
+
 ## [2.1.0] - 2026-11-01
 
 Nessuna modifica ai contratti `bff.yaml` e `authz.yaml`: si aggiorna da 2.0.x cambiando solo la versione.

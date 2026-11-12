@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -68,9 +69,14 @@ public record SessionContext(String username,
      * i permessi, per esempio dopo un cambio di tenant; uguale per insiemi uguali.
      */
     public String permissionsVersion() {
+        return versionOf(permissions);
+    }
+
+    /** Versione di un insieme di permessi (stessa regola di {@link #permissionsVersion()}). */
+    public static String versionOf(Collection<String> permissions) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            String joined = String.join("\n", permissions.stream().sorted().toList());
+            String joined = String.join("\n", permissions.stream().sorted().distinct().toList());
             return HexFormat.of().formatHex(digest.digest(joined.getBytes(StandardCharsets.UTF_8)), 0, 8);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);

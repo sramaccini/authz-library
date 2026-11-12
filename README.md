@@ -42,12 +42,12 @@ Nel `pom.xml` dell'applicazione:
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-bff</artifactId>   <!-- porta con se' authz-session -->
-        <version>2.1.0</version>
+        <version>2.2.0</version>
     </dependency>
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-rbac</artifactId>  <!-- facoltativo: RBAC su PostgreSQL -->
-        <version>2.1.0</version>
+        <version>2.2.0</version>
     </dependency>
 </dependencies>
 ```
@@ -156,6 +156,72 @@ solo quelle aperte sul tenant dell'amministratore, con `authz.session.revokeglob
 | `403` | permesso mancante, token CSRF mancante o `Origin` estranea |
 | `501` | Spring Session non configurato con `repository-type: indexed` |
 
+## Funzioni facoltative
+
+Tutte spente se non configurate.
+
+### Permessi dell'applicazione
+
+Un bean `PermissionContributor` aggiunge permessi che l'RBAC non conosce (per esempio i ruoli di un progetto) e può
+decidere i controlli su una risorsa:
+
+```java
+@Bean
+PermissionContributor projectRoles(ProjectMembers members) {
+    return new PermissionContributor() {
+        public Collection<String> permissions(SessionContext s) { return members.permissionsOf(s.username()); }
+        public Optional<Boolean> check(SessionContext s, String permission, Resource r) {
+            return r.type().equals("project") ? Optional.of(members.allows(s.username(), r.id(), permission))
+                                              : Optional.empty();   // decide l'insieme dei permessi
+        }
+    };
+}
+```
+
+`/authz/capabilities`, `/authz/check` e `X-Permissions-Version` usano l'insieme effettivo (sessione + contributor).
+`@PreAuthorize` vede solo i permessi della sessione: nei servizi si usa `EffectivePermissions`.
+
+### Schema dedicato
+
+`authz.rbac.schema: authz` — tabelle e history delle migrazioni nello schema `authz` (creato se manca), query della
+libreria qualificate; utile quando l'applicazione ha le sue migrazioni Flyway nello schema `public`.
+
+### Accesso con token (script, CI, service account)
+
+```yaml
+authz.bff.bearer:
+  enabled: true
+  paths: ["/api/**"]          # solo qui il bearer è accettato
+  allowed-clients: [cli-tools] # claim azp ammessi; vuoto = tutti i client del realm
+  # issuer-uri: ...            # predefinito: issuer della registrazione OIDC
+  # tenant-header: X-Tenant
+  # rate-limit: {max-requests: 600, window: 1m}
+```
+
+Il token è un access token dello IAM (`preferred_username` deve esistere come utente RBAC attivo; per un service
+account di Keycloak è `service-account-<client>`) o un token personale `pat_…`. Il tenant viene da `X-Tenant`,
+altrimenti è l'ultimo usato dall'utente. Nessuna sessione, niente CSRF; cookie e token insieme danno `400`.
+Esiti: `401` token non valido o scaduto, `403` utente o tenant non autorizzato, `429` oltre il limite per utente
+(contato su Redis; senza Redis il limite non si applica). Nel codice l'`Authentication` è un `TokenAuthentication`.
+
+### Directory del tenant
+
+`TenantDirectory` (bean di `authz-rbac`) cerca gli utenti attivi con un ruolo sul tenant, per selettori e menzioni.
+Con `authz.rbac.directory.permission: tracker.user.read` c'è anche `GET /api/v1/directory/users?q=mar&limit=20`
+→ `[{username, email}]` sul tenant della sessione (`403` senza il permesso).
+
+### Token di accesso personali
+
+`authz.rbac.tokens.enabled: true` (`max-per-user: 20`, `max-days: 366`):
+
+| Chiamata | Risposta |
+|---|---|
+| `GET /api/v1/tokens` | token non revocati dell'utente: `{id, name, hint, createdAt, expiresAt, lastUsedAt}` |
+| `POST /api/v1/tokens` `{"name": "CI", "expiresInDays": 90}` | `201` con `token` in chiaro, l'unica volta; `409` oltre il massimo |
+| `DELETE /api/v1/tokens/{id}` | `204`; `404` se non è un token dell'utente |
+
+Si gestiscono solo da una sessione del browser (`403` con un token). Nel database c'è solo lo SHA-256.
+
 ## Sviluppo e avvio locale
 
 ```bash
@@ -170,7 +236,7 @@ di un'altra versione). Richiedono Docker in esecuzione; senza Docker vengono sal
 
 ```bash
 set -a; . ./.env; set +a
-IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.1.0.jar --spring.profiles.active=dev
+IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.2.0.jar --spring.profiles.active=dev
 ```
 
 Utenti demo (password `DEMO_USER_PASSWORD` di `.env`): `mario.rossi` (TENANT_A), `anna.bianchi` (TENANT_A e

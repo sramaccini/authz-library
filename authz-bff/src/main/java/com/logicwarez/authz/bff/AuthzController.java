@@ -1,8 +1,10 @@
 package com.logicwarez.authz.bff;
 
 import java.util.List;
+import java.util.SortedSet;
 import java.util.regex.Pattern;
 
+import com.logicwarez.authz.session.PermissionContributor;
 import com.logicwarez.authz.session.SessionContext;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.http.HttpStatus;
@@ -18,10 +20,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contratto di autorizzazione di Quadrava (contracts/authz.yaml) sui permessi della sessione: la UI li usa solo
- * per nascondere o disabilitare parti dell'interfaccia, il controllo vero resta su ogni API. I permessi sono quelli
- * del tenant della sessione, fissati al login o al cambio di tenant; {@code app} e' richiesto dal contratto ma non
- * filtra (un'applicazione per back end).
+ * Contratto di autorizzazione di Quadrava (contracts/authz.yaml): la UI usa i permessi solo per nascondere o
+ * disabilitare parti dell'interfaccia, il controllo vero resta su ogni API. I permessi sono quelli del tenant della
+ * sessione, fissati al login o al cambio di tenant, piu' quelli dei {@link PermissionContributor} dell'applicazione,
+ * che decidono anche i controlli con una risorsa. {@code app} e' richiesto dal contratto ma non filtra
+ * (un'applicazione per back end).
  */
 @RestController
 public class AuthzController {
@@ -31,15 +34,22 @@ public class AuthzController {
     static final int MAX_CHECKS = 200;
     private static final Pattern PERMISSION = Pattern.compile("^[a-z0-9]+\\.[a-z0-9]+\\.[a-z0-9]+$");
 
+    private final EffectivePermissions permissions;
+
+    public AuthzController(EffectivePermissions permissions) {
+        this.permissions = permissions;
+    }
+
     @GetMapping("/authz/capabilities")
     public ResponseEntity<?> capabilities(@RequestParam(required = false) String app,
                                           @AuthenticationPrincipal SessionContext session) {
         if (app == null || app.isBlank()) {
             return BffControllers.problem(HttpStatus.BAD_REQUEST, "Missing app parameter");
         }
-        String version = session.permissionsVersion();
+        SortedSet<String> effective = permissions.of(session);
+        String version = SessionContext.versionOf(effective);
         return ResponseEntity.ok().header(VERSION_HEADER, version)
-                .body(new Capabilities(session.permissions().stream().sorted().toList(), version));
+                .body(new Capabilities(List.copyOf(effective), version));
     }
 
     @PostMapping("/authz/check")
@@ -58,10 +68,13 @@ public class AuthzController {
                         "Invalid permission: the format is domain.resource.action, lowercase");
             }
         }
+        SortedSet<String> effective = permissions.of(session);
         List<CheckResult> results = request.checks().stream()
-                .map(c -> new CheckResult(c.permission(), c.resource(), session.hasPermission(c.permission())))
+                .map(c -> new CheckResult(c.permission(), c.resource(), permissions.allows(session, effective,
+                        c.permission(), c.resource() == null ? null
+                                : new PermissionContributor.Resource(c.resource().type(), c.resource().id()))))
                 .toList();
-        return ResponseEntity.ok().header(VERSION_HEADER, session.permissionsVersion())
+        return ResponseEntity.ok().header(VERSION_HEADER, SessionContext.versionOf(effective))
                 .body(new CheckResponse(results));
     }
 

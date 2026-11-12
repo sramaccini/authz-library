@@ -17,6 +17,15 @@ public interface AuthorizationResolver {
     Resolved resolve(String username, String requestedTenant);
 
     /**
+     * Come {@link #resolve}, per una richiesta con un token (accesso senza sessione, ripetuto a ogni richiesta): senza
+     * effetti, in particolare senza cambiare il tenant con cui l'utente entrera' al prossimo login. L'implementazione
+     * predefinita chiama {@link #resolve}.
+     */
+    default Resolved resolveForToken(String username, String requestedTenant) {
+        return resolve(username, requestedTenant);
+    }
+
+    /**
      * @param tenants tenant su cui l'utente puo' lavorare, compreso {@code tenantId}; vuoto se l'applicazione
      *                non gestisce i tenant (il BFF non offre allora il cambio)
      */

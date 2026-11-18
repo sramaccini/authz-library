@@ -175,6 +175,7 @@ public final class LoginSupport {
             Object returnTo = session.getAttribute(RETURN_TO);
             session.removeAttribute(TENANT_HINT);
             session.removeAttribute(RETURN_TO);
+            session.removeAttribute(SessionGuards.MAX_AGE);
             if (!(authentication instanceof OAuth2AuthenticationToken oauth)) {
                 fail(request, response, LoginErrorCode.LOGIN_FAILED);
                 return;
@@ -214,6 +215,10 @@ public final class LoginSupport {
                 session.setAttribute(UserSessions.USER_AGENT,
                         agent.length() > UserSessions.USER_AGENT_MAX ? agent.substring(0, UserSessions.USER_AGENT_MAX) : agent);
             }
+            // momento dell'autenticazione sullo IAM (claim auth_time), per authz.bff.recent-login; senza: il login
+            Instant authTime = oauth.getPrincipal() instanceof OidcUser user && user.getIdToken().getAuthenticatedAt() != null
+                    ? user.getIdToken().getAuthenticatedAt() : now;
+            session.setAttribute(SessionGuards.AUTH_TIME, authTime.isAfter(now) ? now : authTime);
             if (oauth.getPrincipal() instanceof OidcUser oidc) {
                 session.setAttribute(ID_TOKEN, oidc.getIdToken().getTokenValue());
                 String sid = oidc.getIdToken().getClaimAsString("sid");

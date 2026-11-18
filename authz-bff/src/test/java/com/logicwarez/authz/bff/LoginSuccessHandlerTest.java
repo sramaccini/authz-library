@@ -37,7 +37,9 @@ class LoginSuccessHandlerTest {
             new BffProperties.LoginRateLimit(true, 20, Duration.ofMinutes(1), "rl:"),
             new BffProperties.Bearer(false, List.of(), null, List.of(), "X-Tenant",
                     new BffProperties.RateLimit(true, 600, Duration.ofMinutes(1), "rb:")),
-            new BffProperties.BackchannelLogout(false, "oidc:"));
+            new BffProperties.BackchannelLogout(false, "oidc:"),
+            new BffProperties.RecentLogin(Duration.ofMinutes(15), List.of()),
+            new BffProperties.SessionRateLimit(false, List.of("/api/**"), 600, Duration.ofMinutes(1), "rs:"));
 
     private MockHttpServletResponse login(AuthorizationResolver resolver, MockHttpServletRequest request)
             throws Exception {

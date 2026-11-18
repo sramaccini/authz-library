@@ -19,7 +19,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContext;
@@ -60,7 +59,7 @@ final class BearerTokenFilter extends OncePerRequestFilter {
     private final Supplier<JwtDecoder> decoder;
     private final ObjectProvider<PersonalAccessTokenVerifier> personalTokens;
     private final AuthorizationResolver resolver;
-    private final StringRedisTemplate redis;
+    private final SessionGuards.RateCounter rateCounter;
     private final Clock clock;
     private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
     private final RequestAttributeSecurityContextRepository repository = new RequestAttributeSecurityContextRepository();
@@ -75,7 +74,9 @@ final class BearerTokenFilter extends OncePerRequestFilter {
         this.decoder = decoder;
         this.personalTokens = personalTokens;
         this.resolver = resolver;
-        this.redis = redis;
+        BffProperties.RateLimit limit = properties.bearer().rateLimit();
+        this.rateCounter = limit.enabled() ? new SessionGuards.RateCounter(redis, limit.redisKeyPrefix(),
+                limit.maxRequests(), limit.window(), "richieste con token") : null;
         this.clock = clock;
     }
 
@@ -159,21 +160,7 @@ final class BearerTokenFilter extends OncePerRequestFilter {
     }
 
     private boolean overLimit(String username) {
-        BffProperties.RateLimit limit = properties.rateLimit();
-        if (!limit.enabled() || redis == null) {
-            return false;
-        }
-        String key = limit.redisKeyPrefix() + username;
-        try {
-            Long count = redis.opsForValue().increment(key);
-            if (count != null && count == 1) {
-                redis.expire(key, limit.window());
-            }
-            return count != null && count > limit.maxRequests();
-        } catch (DataAccessException e) {
-            log.warn("Rate limiting dei token non disponibile: {}", e.toString());
-            return false;
-        }
+        return rateCounter != null && rateCounter.overLimit(username);
     }
 
     private record Identity(String username, String name, String client, Instant expiresAt) {

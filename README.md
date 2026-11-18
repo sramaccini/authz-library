@@ -42,12 +42,12 @@ Nel `pom.xml` dell'applicazione:
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-bff</artifactId>   <!-- porta con se' authz-session -->
-        <version>2.3.0</version>
+        <version>2.4.0</version>
     </dependency>
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-rbac</artifactId>  <!-- facoltativo: RBAC su PostgreSQL -->
-        <version>2.3.0</version>
+        <version>2.4.0</version>
     </dependency>
 </dependencies>
 ```
@@ -226,6 +226,38 @@ PermissionContributor projectRoles(ProjectMembers members) {
 `/authz/capabilities`, `/authz/check` e `X-Permissions-Version` usano l'insieme effettivo (sessione + contributor).
 `@PreAuthorize` vede solo i permessi della sessione: nei servizi si usa `EffectivePermissions`.
 
+### Login recente prima delle azioni sensibili
+
+```yaml
+authz.bff.recent-login:
+  max-age: 15m
+  paths:                       # spento con l'elenco vuoto; il metodo davanti è facoltativo
+    - /api/v1/admin/**
+    - /api/admin/**
+    - POST /api/me/tokens
+```
+
+Sui percorsi indicati, una sessione autenticata sullo IAM da più di `max-age` riceve `401` con il Problem
+`{"type": "urn:problem:authz:recent-login-required", "title": "Recent login required", "status": 401,
+"maxAge": 900}`; la sessione resta valida per il resto. La pagina rimanda allora a
+`/bff/login?return=<pagina>&max_age=<secondi>` (anche con la sessione aperta si passa dallo IAM): lo IAM chiede di
+nuovo le credenziali se la sua autenticazione è più vecchia (`max_age=0`: sempre) e al ritorno la sessione ha il
+nuovo momento dell'autenticazione. Il momento è il claim `auth_time` dell'ID token (il login, se manca); le sessioni
+aperte prima della 2.4.0 non lo hanno e contano come vecchie. Vale per le sessioni del browser: le richieste con un
+token non sono controllate.
+
+### Limite di frequenza delle sessioni
+
+```yaml
+authz.bff.session-rate-limit:
+  enabled: true
+  # paths: ["/api/**"]   max-requests: 600   window: 1m   redis-key-prefix: "authz:ratelimit:session:"
+```
+
+Limite per utente (tutte le sue sessioni insieme) sulle richieste delle sessioni del browser, contato su Redis:
+oltre il massimo `429` con `Retry-After`. `/bff/**` resta fuori; le richieste con un token hanno il loro limite
+(`authz.bff.bearer.rate-limit`). Senza Redis, o con Redis non raggiungibile, non limita.
+
 ### Schema dedicato
 
 `authz.rbac.schema: authz` — tabelle e history delle migrazioni nello schema `authz` (creato se manca), query della
@@ -281,7 +313,7 @@ di un'altra versione). Richiedono Docker in esecuzione; senza Docker vengono sal
 
 ```bash
 set -a; . ./.env; set +a
-IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.3.0.jar --spring.profiles.active=dev
+IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.4.0.jar --spring.profiles.active=dev
 ```
 
 Utenti demo (password `DEMO_USER_PASSWORD` di `.env`): `mario.rossi` (TENANT_A), `anna.bianchi` (TENANT_A e

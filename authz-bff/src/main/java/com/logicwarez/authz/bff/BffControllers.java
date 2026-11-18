@@ -68,12 +68,22 @@ public final class BffControllers {
         /**
          * Avvia il login OIDC e, a login fatto, torna a {@code return} (solo pagine delle applicazioni: niente
          * open redirect). Con una sessione gia' aperta torna subito indietro. Il tenant facoltativo viene
-         * ricordato fino al ritorno dallo IAM; senza, il resolver sceglie l'ultimo usato.
+         * ricordato fino al ritorno dallo IAM; senza, il resolver sceglie l'ultimo usato. Con {@code max_age}
+         * (secondi) si passa comunque dallo IAM, che chiede di nuovo le credenziali se la sua autenticazione e' piu'
+         * vecchia: serve dopo un {@code 401} di tipo recent-login-required.
          */
         @GetMapping("/bff/login")
         public ResponseEntity<?> login(@RequestParam(name = "return", required = false) String returnTo,
                                        @RequestParam(required = false) String tenant,
+                                       @RequestParam(name = "max_age", required = false) String maxAge,
                                        HttpServletRequest request) {
+            Long seconds = null;
+            if (maxAge != null) {
+                seconds = maxAge.matches("^[0-9]{1,9}$") ? Long.valueOf(maxAge) : null;
+                if (seconds == null) {
+                    return problem(HttpStatus.BAD_REQUEST, "Invalid max_age");
+                }
+            }
             Optional<String> target = Optional.empty();
             if (returnTo != null) {
                 target = origins.applicationUrl(returnTo, request);
@@ -84,10 +94,16 @@ public final class BffControllers {
             if (tenant != null && !TENANT.matcher(tenant).matches()) {
                 return problem(HttpStatus.BAD_REQUEST, "Invalid tenant");
             }
-            if (tenant == null && SessionContext.from(request).isPresent()) {
+            if (tenant == null && seconds == null && SessionContext.from(request).isPresent()) {
                 return ResponseEntity.status(HttpStatus.FOUND).location(target.map(URI::create).orElse(home)).build();
             }
             HttpSession session = request.getSession();
+            // con max_age lo IAM chiede di nuovo le credenziali se la sua sessione e' piu' vecchia (login recente)
+            if (seconds != null) {
+                session.setAttribute(SessionGuards.MAX_AGE, seconds);
+            } else {
+                session.removeAttribute(SessionGuards.MAX_AGE);
+            }
             if (tenant != null) {
                 session.setAttribute(LoginSupport.TENANT_HINT, tenant);
             } else {

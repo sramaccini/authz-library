@@ -1,6 +1,7 @@
 package com.logicwarez.authz.bff;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 
 import com.logicwarez.authz.session.AuthorizationResolver;
@@ -24,6 +25,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
@@ -58,6 +60,9 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
         ApplicationContext context = http.getSharedObject(ApplicationContext.class);
         http.with(SessionContextConfigurer.sessionContext(), Customizer.withDefaults());
         http.oauth2Login(login -> login
+                .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(
+                        new SessionGuards.MaxAgeAuthorizationRequestResolver(
+                                context.getBean(ClientRegistrationRepository.class))))
                 .successHandler(context.getBean(LoginSupport.LoginSuccessHandler.class))
                 .failureHandler(context.getBean(LoginSupport.LoginFailureHandler.class)));
         // API per una SPA: mai redirect alla pagina di login, sempre 401
@@ -81,6 +86,14 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
                 SecurityContextHolderFilter.class);
         http.addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class);
         http.addFilterAfter(new PermissionsVersionFilter(context.getBean(EffectivePermissions.class)), CsrfFilter.class);
+        if (properties.sessionRateLimit().enabled()) {
+            http.addFilterAfter(new SessionGuards.SessionRateLimitFilter(properties.sessionRateLimit(),
+                    context.getBeanProvider(StringRedisTemplate.class).getIfAvailable()), CsrfFilter.class);
+        }
+        if (!properties.recentLogin().paths().isEmpty()) {
+            http.addFilterAfter(new SessionGuards.RecentLoginFilter(properties.recentLogin(), Clock.systemUTC()),
+                    CsrfFilter.class);
+        }
         if (properties.bearer().enabled()) {
             http.addFilterBefore(new BearerTokenFilter(properties,
                     () -> context.containsBean(BffAutoConfiguration.BEARER_DECODER)
@@ -97,10 +110,19 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
     }
 
     static void problem(HttpServletResponse response, HttpStatus status, String detail) throws IOException {
+        problem(response, status, "about:blank", detail, null);
+    }
+
+    /** Problem con un tipo proprio; title e' il detail, extra sono campi JSON gia' formattati (o null). */
+    static void problem(HttpServletResponse response, HttpStatus status, String type, String detail, String extra)
+            throws IOException {
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        response.getWriter().write("{\"type\":\"about:blank\",\"title\":\"" + status.getReasonPhrase()
-                + "\",\"status\":" + status.value() + ",\"detail\":\"" + detail + "\"}");
+        response.setCharacterEncoding(StandardCharsets.UTF_8);
+        String title = "about:blank".equals(type) ? status.getReasonPhrase() : detail;
+        response.getWriter().write("{\"type\":\"" + type + "\",\"title\":\"" + title
+                + "\",\"status\":" + status.value() + ",\"detail\":\"" + detail + "\""
+                + (extra == null ? "" : "," + extra) + "}");
     }
 
     static final class OriginCheckFilter extends OncePerRequestFilter {

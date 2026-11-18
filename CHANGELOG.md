@@ -2,6 +2,29 @@
 
 Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Semantic Versioning](https://semver.org/lang/it/).
 
+## [2.4.0] - 2026-11-18
+
+Richieste A8 e A9 di OpenDevTrack (ASVS 3.7.1, 4.3.3, 11.1.4). Tutto facoltativo; nessuna modifica ai contratti
+`bff.yaml` e `authz.yaml`, nessuna migrazione.
+
+### Aggiunto
+
+- **Login recente** (A8): `authz.bff.recent-login.paths` (con il metodo facoltativo, `POST /api/me/tokens`) e
+  `max-age` (15m). Una sessione autenticata sullo IAM da più di `max-age` riceve su quei percorsi `401` con il
+  Problem `urn:problem:authz:recent-login-required` (e `maxAge` in secondi). Al login la sessione registra
+  `auth_time` dell'ID token.
+- `/bff/login?max_age=<secondi>`: passa `max_age` allo IAM nella richiesta di autorizzazione, anche con una sessione
+  già aperta. Verificato su Keycloak 26: con `max_age=0` chiede di nuovo la password dentro la sessione SSO e
+  aggiorna `auth_time`. `400` per un valore non numerico.
+- **Limite delle sessioni** (A9): `authz.bff.session-rate-limit` (`enabled`, `paths` `/api/**`, `max-requests` 600,
+  `window` 1m, `redis-key-prefix` `authz:ratelimit:session:`): limite per utente sulle richieste delle sessioni del
+  browser, `429` con `Retry-After`.
+- Test: `BffGuardsTest` (Redis).
+
+### Corretto
+
+- I Problem scritti dai filtri del BFF (`401`, `403`, `429`...) avevano `charset=ISO-8859-1`; ora UTF-8.
+
 ## [2.3.0] - 2026-11-18
 
 Richiesta A7 di OpenDevTrack (ASVS 3.3.3, 3.3.4). Nessuna modifica ai contratti `bff.yaml` e `authz.yaml`.

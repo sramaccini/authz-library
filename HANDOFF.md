@@ -6,7 +6,7 @@ L'utente è Simone. Lavora in italiano, tono tecnico.
 
 ## Stato
 
-**2026-11-18 — 2.3.0** (sessioni dell'utente, back-channel logout OIDC; 2.2.0 il 2026-11-12: permessi dell'applicazione, schema dedicato, accesso con token, directory del tenant, token personali; 2.1.0 il 2026-11-01, 2.0.0 e 2.0.1 il 2026-10-31), groupId e package `com.logicwarez.authz` (le pubblicazioni dello stesso giorno con `com.enterprise.authz` 2.0.0 e `it.logicware.authz` 3.0.0 sono ritirate). Repository github.com/sramaccini/authz-library, branch `master`. Le librerie
+**2026-11-18 — 2.4.0** (login recente, limite delle sessioni; 2.3.0 il 2026-11-18: sessioni dell'utente, back-channel logout OIDC; 2.2.0 il 2026-11-12: permessi dell'applicazione, schema dedicato, accesso con token, directory del tenant, token personali; 2.1.0 il 2026-11-01, 2.0.0 e 2.0.1 il 2026-10-31), groupId e package `com.logicwarez.authz` (le pubblicazioni dello stesso giorno con `com.enterprise.authz` 2.0.0 e `it.logicware.authz` 3.0.0 sono ritirate). Repository github.com/sramaccini/authz-library, branch `master`. Le librerie
 (`authz-session`, `authz-rbac`, `authz-bff`, esempio `examples/authz-demo-app`) hanno sostituito i servizi della 1.x,
 eliminati su indicazione dell'utente (erano in `legacy/`; restano nella storia git fino al commit `0074f15`).
 
@@ -31,7 +31,10 @@ Fatto il 2026-11-18, richiesta A7 di OpenDevTrack (ASVS 3.3.3, 3.3.4; issue sram
 su Redis, `jti` usato una volta), `GET /bff/admin/users/{username}/sessions`. Formato del logout token verificato
 con Keycloak 26 (`typ: logout+jwt`, `sid`, `sub`, `events`).
 
-Verifiche: 62 test con `mvn install`. `BffContractTest` e `BffBearerTest` provano il contratto via HTTP;
+Fatto il 2026-11-18 (2.4.0), richieste A8 e A9 di OpenDevTrack (ADR-24): `authz.bff.recent-login` e
+`/bff/login?max_age=` (`SessionGuards`; `max_age=0` verificato su Keycloak 26), `authz.bff.session-rate-limit`.
+
+Verifiche: 65 test con `mvn install`. `BffContractTest` e `BffBearerTest` provano il contratto via HTTP;
 `RbacPostgresTest`, `RbacSchemaTest`, `BffRedisTest` e `BffBearerRateLimitTest` usano PostgreSQL e Redis veri con Testcontainers (serve Docker, altrimenti sono saltati);
 `AdminOpenApiTest` rigenera la definizione OpenAPI e fallisce se `docs/authz-admin-openapi-spec.json` non è
 aggiornata. Il 2026-10-31, prova

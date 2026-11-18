@@ -23,7 +23,28 @@ public record BffProperties(@Valid @DefaultValue Oidc oidc,
                             @Valid @NotNull Frontend frontend,
                             @Valid @DefaultValue LoginRateLimit loginRateLimit,
                             @Valid @DefaultValue Bearer bearer,
-                            @Valid @DefaultValue BackchannelLogout backchannelLogout) {
+                            @Valid @DefaultValue BackchannelLogout backchannelLogout,
+                            @Valid @DefaultValue RecentLogin recentLogin,
+                            @Valid @DefaultValue SessionRateLimit sessionRateLimit) {
+
+    /**
+     * Login recente prima delle azioni sensibili: sui percorsi indicati una sessione autenticata sullo IAM da piu' di
+     * {@code maxAge} riceve {@code 401} (Problem {@code urn:problem:authz:recent-login-required}). Spento con
+     * {@code paths} vuoto.
+     *
+     * @param paths percorsi, con il metodo facoltativo davanti: {@code /api/admin/**}, {@code POST /api/me/tokens}
+     */
+    public record RecentLogin(@DefaultValue("15m") @NotNull Duration maxAge,
+                              @DefaultValue List<String> paths) {
+    }
+
+    /** Limite per utente sulle richieste delle sessioni del browser, con contatore condiviso su Redis. */
+    public record SessionRateLimit(@DefaultValue("false") boolean enabled,
+                                   @DefaultValue("/api/**") List<String> paths,
+                                   @DefaultValue("600") @Positive int maxRequests,
+                                   @DefaultValue("1m") @NotNull Duration window,
+                                   @DefaultValue("authz:ratelimit:session:") @NotBlank String redisKeyPrefix) {
+    }
 
     /**
      * OIDC Back-Channel Logout: lo IAM chiama {@code POST /bff/backchannel-logout} e il BFF chiude le sessioni

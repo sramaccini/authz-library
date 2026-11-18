@@ -108,6 +108,12 @@ public class BffAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "authz.bff.token-relay.enabled", havingValue = "true")
+    SessionAccessTokens sessionAccessTokens(ClientRegistrationRepository registrations, BffProperties properties) {
+        return new SessionAccessTokens(registrations, properties, Clock.systemUTC());
+    }
+
+    @Bean
     LoginSupport.LoginRedirects loginRedirects(BffProperties properties) {
         return new LoginSupport.LoginRedirects(properties);
     }

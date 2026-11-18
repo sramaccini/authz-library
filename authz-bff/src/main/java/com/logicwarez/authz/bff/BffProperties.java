@@ -25,7 +25,18 @@ public record BffProperties(@Valid @DefaultValue Oidc oidc,
                             @Valid @DefaultValue Bearer bearer,
                             @Valid @DefaultValue BackchannelLogout backchannelLogout,
                             @Valid @DefaultValue RecentLogin recentLogin,
-                            @Valid @DefaultValue SessionRateLimit sessionRateLimit) {
+                            @Valid @DefaultValue SessionRateLimit sessionRateLimit,
+                            @Valid @DefaultValue TokenRelay tokenRelay) {
+
+    /**
+     * Token relay: il login lascia access e refresh token dello IAM nella sessione, per inoltrarli a servizi separati
+     * con {@link SessionAccessTokens}. Spento: i token vengono eliminati subito dopo il login.
+     *
+     * @param clockSkew anticipo con cui un access token in scadenza viene rinnovato
+     */
+    public record TokenRelay(@DefaultValue("false") boolean enabled,
+                             @DefaultValue("60s") @NotNull Duration clockSkew) {
+    }
 
     /**
      * Login recente prima delle azioni sensibili: sui percorsi indicati una sessione autenticata sullo IAM da piu' di

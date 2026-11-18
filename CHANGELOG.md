@@ -2,11 +2,19 @@
 
 Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Non rilasciato]
+## [2.5.0] - 2026-11-18
 
 ### Aggiunto
 
 - Licenza **Mozilla Public License 2.0** (`LICENSE`, `<licenses>` nel `pom.xml`): le librerie si possono usare, anche in Quadrava CE.
+- **Token relay** (richiesta di Quadrava CE per il BFF di riferimento): con `authz.bff.token-relay.enabled: true`
+  il login lascia nella sessione (Redis) il client autorizzato della registrazione OIDC, con access e refresh token,
+  invece di eliminarlo. Il bean `SessionAccessTokens` dà l'access token dell'utente della sessione
+  (`forRequest(request, response)`), rinnovato con il refresh token se scade entro `clock-skew` (60s), per
+  inoltrarlo a servizi separati. Vuoto senza sessione o se il rinnovo fallisce: refresh token scaduto o revocato →
+  client tolto (serve un nuovo login), IAM non raggiungibile → client tenuto. I token finiscono con la sessione
+  (logout, revoca, back-channel logout). Spento: comportamento invariato.
+- Test: `BffTokenRelayTest` (Redis, token endpoint finto).
 
 ## [2.4.0] - 2026-11-18
 

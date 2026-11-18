@@ -59,6 +59,11 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
     public void init(HttpSecurity http) {
         ApplicationContext context = http.getSharedObject(ApplicationContext.class);
         http.with(SessionContextConfigurer.sessionContext(), Customizer.withDefaults());
+        // token relay: il client autorizzato del login va nella sessione (Redis) e finisce con lei
+        SessionAccessTokens relay = context.getBeanProvider(SessionAccessTokens.class).getIfAvailable();
+        if (relay != null) {
+            http.oauth2Login(login -> login.authorizedClientRepository(relay.repository()));
+        }
         http.oauth2Login(login -> login
                 .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(
                         new SessionGuards.MaxAgeAuthorizationRequestResolver(

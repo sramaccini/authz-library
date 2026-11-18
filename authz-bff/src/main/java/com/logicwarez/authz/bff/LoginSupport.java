@@ -135,7 +135,7 @@ public final class LoginSupport {
      * Dopo il login OIDC: risolve ruoli e permessi in-process, salva il {@link SessionContext} nella sessione
      * (gia' rigenerata da Spring Security contro la session fixation), indicizza la sessione per username
      * (revoca), conserva solo l'ID token per il logout sullo IAM e torna alla pagina indicata da /bff/login.
-     * Access e refresh token vengono eliminati.
+     * Access e refresh token vengono eliminati, salvo con authz.bff.token-relay (restano nella sessione).
      */
     public static class LoginSuccessHandler implements AuthenticationSuccessHandler {
 
@@ -180,7 +180,9 @@ public final class LoginSupport {
                 fail(request, response, LoginErrorCode.LOGIN_FAILED);
                 return;
             }
-            removeAuthorizedClient(oauth, request, response);
+            if (!properties.tokenRelay().enabled()) {
+                removeAuthorizedClient(oauth, request, response);
+            }
             String username = oauth.getPrincipal().getAttribute(properties.oidc().usernameClaim());
             if (username == null || username.isBlank()) {
                 log.warn("Claim '{}' assente nel token IAM", properties.oidc().usernameClaim());

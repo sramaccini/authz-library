@@ -42,12 +42,12 @@ Nel `pom.xml` dell'applicazione:
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-bff</artifactId>   <!-- porta con se' authz-session -->
-        <version>2.4.0</version>
+        <version>2.5.0</version>
     </dependency>
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-rbac</artifactId>  <!-- facoltativo: RBAC su PostgreSQL -->
-        <version>2.4.0</version>
+        <version>2.5.0</version>
     </dependency>
 </dependencies>
 ```
@@ -258,6 +258,34 @@ Limite per utente (tutte le sue sessioni insieme) sulle richieste delle sessioni
 oltre il massimo `429` con `Retry-After`. `/bff/**` resta fuori; le richieste con un token hanno il loro limite
 (`authz.bff.bearer.rate-limit`). Senza Redis, o con Redis non raggiungibile, non limita.
 
+### Token relay verso servizi separati
+
+```yaml
+authz.bff.token-relay:
+  enabled: true
+  # clock-skew: 60s      # rinnova l'access token che scade entro questo tempo
+```
+
+Di norma il BFF elimina access e refresh token subito dopo il login. Con il relay li lascia nella sessione (Redis),
+per inoltrare le richieste a servizi separati che verificano il token dell'utente:
+
+```java
+// in un filtro o controller dell'applicazione, dopo la catena di sicurezza
+Optional<String> token = sessionAccessTokens.forRequest(request, response);
+if (token.isEmpty()) { response.setStatus(401); return; }
+forwarded.header("Authorization", "Bearer " + token.get());
+```
+
+- Il token scaduto (o in scadenza) si rinnova con il refresh token e il nuovo viene salvato nella sessione.
+- Vuoto senza una sessione del browser (anche per le richieste con un token), per le sessioni aperte prima di
+  attivare il relay e quando il rinnovo fallisce: refresh token scaduto o revocato → il client viene tolto e serve
+  un nuovo login; IAM non raggiungibile → il client resta e un tentativo successivo può riuscire.
+- I token finiscono con la sessione: logout, revoca, back-channel logout, scadenza.
+- La sessione su Redis contiene i token: Redis va protetto (rete privata, autenticazione, TLS) come un archivio di
+  credenziali. Con la rotazione dei refresh token di Keycloak (*Revoke Refresh Token* attivo) due rinnovi
+  contemporanei della stessa sessione possono far fallire il secondo: meglio lasciarla spenta (predefinito) o
+  ammettere un riuso (*Refresh Token Max Reuse*).
+
 ### Schema dedicato
 
 `authz.rbac.schema: authz` — tabelle e history delle migrazioni nello schema `authz` (creato se manca), query della
@@ -313,7 +341,7 @@ di un'altra versione). Richiedono Docker in esecuzione; senza Docker vengono sal
 
 ```bash
 set -a; . ./.env; set +a
-IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.4.0.jar --spring.profiles.active=dev
+IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.5.0.jar --spring.profiles.active=dev
 ```
 
 Utenti demo (password `DEMO_USER_PASSWORD` di `.env`): `mario.rossi` (TENANT_A), `anna.bianchi` (TENANT_A e

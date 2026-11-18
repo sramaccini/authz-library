@@ -23,9 +23,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -315,7 +317,9 @@ class BffContractTest {
     }
 
     /** Applicazione minima: BFF con sessioni in memoria, resolver finto e un ingresso di test al posto dello IAM. */
-    @SpringBootApplication
+    @SpringBootConfiguration
+    @EnableAutoConfiguration
+    @Import(TestApp.SignIn.class)
     @EnableSpringHttpSession
     static class TestApp {
 

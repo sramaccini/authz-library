@@ -69,6 +69,9 @@ authz:
         - ${FRONTEND_URL:http://localhost:4200}
     session:
       absolute-timeout: 10h
+    # Keycloak chiude le sessioni del BFF quando chiude le sue (logout altrove, "esci dagli altri dispositivi")
+    backchannel-logout:
+      enabled: true
 
 management:
   endpoints:

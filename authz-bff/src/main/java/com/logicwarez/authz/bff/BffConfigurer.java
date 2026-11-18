@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
@@ -30,6 +31,7 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -63,7 +65,10 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
         // spa(): token letto dall'header X-XSRF-TOKEN; il cookie XSRF-TOKEN non e' HttpOnly perche' la pagina lo legge
         // Le richieste autenticate con un token (BearerTokenFilter) non portano credenziali implicite: niente CSRF
         http.csrf(csrf -> csrf.spa().csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                .ignoringRequestMatchers(request -> request.getAttribute(BearerTokenFilter.ATTRIBUTE) != null));
+                .ignoringRequestMatchers(request -> request.getAttribute(BearerTokenFilter.ATTRIBUTE) != null)
+                // chiamata dallo IAM, da server a server, autenticata dalla firma del logout token
+                .ignoringRequestMatchers(PathPatternRequestMatcher.withDefaults()
+                        .matcher(HttpMethod.POST, BackChannelLogout.PATH)));
         // POST /logout e' di BffControllers (risposta JSON con l'indirizzo di logout sullo IAM)
         http.logout(logout -> logout.disable());
     }

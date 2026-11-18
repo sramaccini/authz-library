@@ -5,6 +5,11 @@ import java.time.Clock;
 import com.logicwarez.authz.session.AuthorizationResolver;
 import com.logicwarez.authz.session.PermissionContributor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.Session;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -30,11 +35,14 @@ import org.springframework.security.oauth2.jwt.SupplierJwtDecoder;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableConfigurationProperties(BffProperties.class)
 @Import({BffControllers.LoginController.class, BffControllers.SessionController.class,
-        BffControllers.SessionAdminController.class, AuthzController.class})
+        BffControllers.SessionAdminController.class, UserSessions.UserSessionController.class, AuthzController.class})
 public class BffAutoConfiguration {
 
     /** Nome del decoder dei token di authz.bff.bearer: un JwtDecoder dell'applicazione non lo sostituisce. */
     public static final String BEARER_DECODER = "authzBearerJwtDecoder";
+
+    /** Nome del decoder dei logout token di authz.bff.backchannel-logout. */
+    public static final String LOGOUT_DECODER = "authzLogoutTokenDecoder";
 
     @Bean
     EffectivePermissions effectivePermissions(ObjectProvider<PermissionContributor> contributors) {
@@ -67,6 +75,38 @@ public class BffAutoConfiguration {
         });
     }
 
+    /** Decoder dei logout token: chiavi, emittente e client della registrazione OIDC del login; creato al primo uso. */
+    @Bean(LOGOUT_DECODER)
+    @ConditionalOnProperty(name = "authz.bff.backchannel-logout.enabled", havingValue = "true")
+    @ConditionalOnMissingBean(name = LOGOUT_DECODER)
+    JwtDecoder authzLogoutTokenDecoder(ClientRegistrationRepository registrations, BffProperties properties) {
+        return new SupplierJwtDecoder(() -> {
+            ClientRegistration registration = registrations.findByRegistrationId(properties.oidc().registrationId());
+            ClientRegistration.ProviderDetails provider = registration.getProviderDetails();
+            if (provider.getJwkSetUri() == null || provider.getIssuerUri() == null) {
+                throw new IllegalStateException("Back-channel logout: provider OIDC senza jwk-set-uri o issuer-uri");
+            }
+            NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(provider.getJwkSetUri()).validateType(false).build();
+            decoder.setJwtValidator(BackChannelLogout.validator(provider.getIssuerUri(), registration.getClientId()));
+            return decoder;
+        });
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "authz.bff.backchannel-logout.enabled", havingValue = "true")
+    BackChannelLogout.SessionIndex backChannelSessionIndex(StringRedisTemplate redis, BffProperties properties) {
+        return new BackChannelLogout.SessionIndex(redis, properties.backchannelLogout().redisKeyPrefix(),
+                properties.session().absoluteTimeout());
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "authz.bff.backchannel-logout.enabled", havingValue = "true")
+    BackChannelLogout.BackChannelLogoutController backChannelLogoutController(
+            @Qualifier(LOGOUT_DECODER) JwtDecoder decoder, BackChannelLogout.SessionIndex index,
+            ObjectProvider<FindByIndexNameSessionRepository<? extends Session>> sessions) {
+        return new BackChannelLogout.BackChannelLogoutController(decoder, index, sessions);
+    }
+
     @Bean
     LoginSupport.LoginRedirects loginRedirects(BffProperties properties) {
         return new LoginSupport.LoginRedirects(properties);
@@ -91,8 +131,10 @@ public class BffAutoConfiguration {
     LoginSupport.LoginSuccessHandler loginSuccessHandler(AuthorizationResolver resolver,
                                                          ObjectProvider<OAuth2AuthorizedClientRepository> clients,
                                                          LoginSupport.LoginRedirects redirects,
-                                                         BffProperties properties) {
-        return new LoginSupport.LoginSuccessHandler(resolver, clients, redirects, properties, Clock.systemUTC());
+                                                         BffProperties properties,
+                                                         ObjectProvider<BackChannelLogout.SessionIndex> sessionIndex) {
+        return new LoginSupport.LoginSuccessHandler(resolver, clients, redirects, properties, Clock.systemUTC(),
+                sessionIndex.getIfAvailable());
     }
 
     @Bean

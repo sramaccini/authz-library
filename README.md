@@ -42,12 +42,12 @@ Nel `pom.xml` dell'applicazione:
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-bff</artifactId>   <!-- porta con se' authz-session -->
-        <version>2.2.0</version>
+        <version>2.3.0</version>
     </dependency>
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-rbac</artifactId>  <!-- facoltativo: RBAC su PostgreSQL -->
-        <version>2.2.0</version>
+        <version>2.3.0</version>
     </dependency>
 </dependencies>
 ```
@@ -156,6 +156,51 @@ solo quelle aperte sul tenant dell'amministratore, con `authz.session.revokeglob
 | `403` | permesso mancante, token CSRF mancante o `Origin` estranea |
 | `501` | Spring Session non configurato con `repository-type: indexed` |
 
+`GET /bff/admin/users/{username}/sessions` le elenca, con gli stessi permessi e lo stesso filtro sul tenant
+(stesso formato di `GET /bff/sessions`, `current` sempre `false`).
+
+### Sessioni dell'utente
+
+L'utente collegato vede e chiude le proprie sessioni (con il cookie di sessione; le scritture vogliono
+`X-XSRF-TOKEN`). Serve `repository-type: indexed`, altrimenti `501`.
+
+| Chiamata | Risposta |
+|---|---|
+| `GET /bff/sessions` | `[{id, createdAt, lastAccessedAt, ipAddress, userAgent, tenant, current}]`, ultimo accesso più recente prima |
+| `DELETE /bff/sessions/{id}` | `204`; anche la sessione corrente (come un logout senza uscire dallo IAM); `404` se non è dell'utente |
+| `DELETE /bff/sessions` | `204`: chiude tutte le sessioni dell'utente tranne quella della richiesta |
+
+`id` è un hash dell'identificativo della sessione: non è il valore del cookie e non permette di usarla.
+IP (dietro un proxy, con `server.forward-headers-strategy`) e user agent sono quelli del login; le sessioni
+aperte prima della 2.3.0 li hanno vuoti.
+
+### Back-channel logout (OIDC)
+
+```yaml
+authz.bff.backchannel-logout.enabled: true   # serve Redis con repository-type: indexed
+```
+
+Lo IAM chiama `POST /bff/backchannel-logout` (`logout_token` in un form, senza cookie né CSRF; è in
+`BffControllers.PUBLIC_PATHS`) quando una sua sessione finisce, e il BFF chiude le sessioni collegate: quelle con
+lo stesso `sid`, o tutte quelle del `sub` se il token non ha `sid`. Il logout token è verificato con le chiavi
+(`jwk-set-uri`), l'emittente e il client della registrazione OIDC del login: firma, `aud`, scadenza, evento
+`http://schemas.openid.net/event/backchannel-logout`, `jti` usato una volta sola, niente `nonce`. Risposte: `200`;
+`400 {"error": "invalid_request"}` per un token non valido.
+
+Keycloak, client del BFF (nel realm di sviluppo `keycloak/import/enterprise-realm.json` è già così, per l'app
+demo su `8080`):
+
+- *Backchannel logout URL*: `https://<bff>/bff/backchannel-logout` (raggiungibile da Keycloak: da un container
+  verso l'host, `host.docker.internal`);
+- *Backchannel logout session required*: on (mette `sid` nei token: si chiude solo la sessione uscita);
+- *Front channel logout*: off.
+
+Con questa configurazione chiudono anche le sessioni del BFF: il logout da un'altra applicazione del realm,
+*Sign out* di un utente o di una sessione nella console di amministrazione, *Sign out all devices* nell'account
+console e il cambio della password con *Sign out from other devices* (azione richiesta *Update Password*).
+Per chiudere tutto a ogni cambio di password senza lasciare la scelta all'utente, un listener di eventi di
+Keycloak (`UPDATE_PASSWORD`) che chiude le sessioni dell'utente.
+
 ## Funzioni facoltative
 
 Tutte spente se non configurate.
@@ -236,7 +281,7 @@ di un'altra versione). Richiedono Docker in esecuzione; senza Docker vengono sal
 
 ```bash
 set -a; . ./.env; set +a
-IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.2.0.jar --spring.profiles.active=dev
+IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.3.0.jar --spring.profiles.active=dev
 ```
 
 Utenti demo (password `DEMO_USER_PASSWORD` di `.env`): `mario.rossi` (TENANT_A), `anna.bianchi` (TENANT_A e

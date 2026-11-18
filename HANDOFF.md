@@ -6,7 +6,7 @@ L'utente è Simone. Lavora in italiano, tono tecnico.
 
 ## Stato
 
-**2026-11-12 — 2.2.0** (richieste di OpenDevTrack: permessi dell'applicazione, schema dedicato, accesso con token, directory del tenant, token personali; 2.1.0 il 2026-11-01, 2.0.0 e 2.0.1 il 2026-10-31), groupId e package `com.logicwarez.authz` (le pubblicazioni dello stesso giorno con `com.enterprise.authz` 2.0.0 e `it.logicware.authz` 3.0.0 sono ritirate). Repository github.com/sramaccini/authz-library, branch `master`. Le librerie
+**2026-11-18 — 2.3.0** (sessioni dell'utente, back-channel logout OIDC; 2.2.0 il 2026-11-12: permessi dell'applicazione, schema dedicato, accesso con token, directory del tenant, token personali; 2.1.0 il 2026-11-01, 2.0.0 e 2.0.1 il 2026-10-31), groupId e package `com.logicwarez.authz` (le pubblicazioni dello stesso giorno con `com.enterprise.authz` 2.0.0 e `it.logicware.authz` 3.0.0 sono ritirate). Repository github.com/sramaccini/authz-library, branch `master`. Le librerie
 (`authz-session`, `authz-rbac`, `authz-bff`, esempio `examples/authz-demo-app`) hanno sostituito i servizi della 1.x,
 eliminati su indicazione dell'utente (erano in `legacy/`; restano nella storia git fino al commit `0074f15`).
 
@@ -26,7 +26,12 @@ A1 `PermissionContributor` (`EffectivePermissions` per capabilities, check e ver
 `authz.rbac.directory.permission`; A6 `authz.rbac.tokens` (migrazione `V4`, `PersonalAccessTokenVerifier`). Quando
 OpenDevTrack adotta la 2.2.0 può togliere i suoi `TenantUsers` e `BearerTokenSecurity`.
 
-Verifiche: 57 test con `mvn install`. `BffContractTest` e `BffBearerTest` provano il contratto via HTTP;
+Fatto il 2026-11-18, richiesta A7 di OpenDevTrack (ASVS 3.3.3, 3.3.4; issue sramaccini/open-devtrack#10):
+`/bff/sessions` (`UserSessions`), `authz.bff.backchannel-logout` (`BackChannelLogout`: indice `sid`/`sub` → utente
+su Redis, `jti` usato una volta), `GET /bff/admin/users/{username}/sessions`. Formato del logout token verificato
+con Keycloak 26 (`typ: logout+jwt`, `sid`, `sub`, `events`).
+
+Verifiche: 62 test con `mvn install`. `BffContractTest` e `BffBearerTest` provano il contratto via HTTP;
 `RbacPostgresTest`, `RbacSchemaTest`, `BffRedisTest` e `BffBearerRateLimitTest` usano PostgreSQL e Redis veri con Testcontainers (serve Docker, altrimenti sono saltati);
 `AdminOpenApiTest` rigenera la definizione OpenAPI e fallisce se `docs/authz-admin-openapi-spec.json` non è
 aggiornata. Il 2026-10-31, prova
@@ -81,8 +86,9 @@ ignorate (la revoca rispondeva sempre `501`); si usano `spring.session.data.redi
 
 ## Prossimi passi suggeriti
 
-1. Back-channel logout OIDC: revoca delle sessioni quando l'utente esce dallo IAM da un'altra applicazione.
-2. Retention e protezione del registro di audit (GDPR).
-3. Valutare un BOM (`authz-bom`) se le applicazioni consumatrici diventano più di una.
+1. Retention e protezione del registro di audit (GDPR).
+2. Valutare un BOM (`authz-bom`) se le applicazioni consumatrici diventano più di una.
+3. Il back-channel logout del realm di sviluppo punta solo all'app demo (`8080`): Keycloak ammette un solo URL per
+   client, un'applicazione su un'altra porta (Quadrava runtime su `8090`) ne vuole uno suo o un altro client.
 4. Il `type` dei Problem dell'API di amministrazione è ancora `urn:problem:auth-service:<codice>` (nome della 1.x):
    cambiarlo è una modifica del contratto, da concordare con chi lo usa.

@@ -2,6 +2,25 @@
 
 Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Semantic Versioning](https://semver.org/lang/it/).
 
+## [2.3.0] - 2026-11-18
+
+Richiesta A7 di OpenDevTrack (ASVS 3.3.3, 3.3.4). Nessuna modifica ai contratti `bff.yaml` e `authz.yaml`.
+
+### Aggiunto
+
+- **Sessioni dell'utente**: `GET /bff/sessions` (id opaco, creazione, ultimo accesso, IP e user agent del login,
+  tenant, sessione corrente), `DELETE /bff/sessions/{id}`, `DELETE /bff/sessions` (tutte tranne la corrente).
+  Al login la sessione registra IP, user agent, `sid` e `sub` dello IAM.
+- **Back-channel logout OIDC**: con `authz.bff.backchannel-logout.enabled: true`, `POST /bff/backchannel-logout`
+  chiude le sessioni del BFF collegate al `sid` (o al `sub`) del logout token dello IAM. Chiavi Redis
+  `authz:oidc:` (`redis-key-prefix`) da `sid`/`sub` all'utente. Realm di sviluppo configurato (URL di
+  back-channel, *session required*) e `extra_hosts` per Keycloak in `docker-compose.yml`; l'app demo lo attiva.
+- `GET /bff/admin/users/{username}/sessions`: sessioni di un utente per l'amministrazione, con le regole della
+  revoca.
+- `/bff/backchannel-logout` in `BffControllers.PUBLIC_PATHS`.
+- Test: `BffSessionsTest` (Redis, login con il `LoginSuccessHandler` vero, logout token firmati). Formato del
+  logout token verificato su Keycloak 26.
+
 ## [2.2.0] - 2026-11-12
 
 Richieste di OpenDevTrack (A1, A2, A4, A5, A6; A3 era già nella 2.1.0). Tutto facoltativo: senza nuove proprietà il

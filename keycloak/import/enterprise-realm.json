@@ -22,9 +22,13 @@
       "serviceAccountsEnabled": false,
       "redirectUris": ["http://localhost:8080/login/oauth2/code/iam", "http://localhost:8090/login/oauth2/code/iam"],
       "webOrigins": ["http://localhost:8080", "http://localhost:8090"],
+      "frontchannelLogout": false,
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:4200/*##http://localhost:8090/*"
+        "post.logout.redirect.uris": "http://localhost:4200/*##http://localhost:8090/*",
+        "backchannel.logout.url": "http://host.docker.internal:8080/bff/backchannel-logout",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false"
       },
       "protocolMappers": [
         {

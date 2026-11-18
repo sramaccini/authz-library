@@ -146,15 +146,25 @@ public final class LoginSupport {
         private final LoginRedirects redirects;
         private final BffProperties properties;
         private final Clock clock;
+        private final BackChannelLogout.SessionIndex sessionIndex;
 
         public LoginSuccessHandler(AuthorizationResolver resolver,
                                    ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients,
                                    LoginRedirects redirects, BffProperties properties, Clock clock) {
+            this(resolver, authorizedClients, redirects, properties, clock, null);
+        }
+
+        /** @param sessionIndex indice per il back-channel logout; null se non attivo */
+        public LoginSuccessHandler(AuthorizationResolver resolver,
+                                   ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients,
+                                   LoginRedirects redirects, BffProperties properties, Clock clock,
+                                   BackChannelLogout.SessionIndex sessionIndex) {
             this.resolver = resolver;
             this.authorizedClients = authorizedClients;
             this.redirects = redirects;
             this.properties = properties;
             this.clock = clock;
+            this.sessionIndex = sessionIndex;
         }
 
         @Override
@@ -197,8 +207,27 @@ public final class LoginSupport {
                     resolved.email(), resolved.tenantId(), resolved.tenants(), resolved.roles(),
                     resolved.permissions(), now, now.plus(properties.session().absoluteTimeout())));
             session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, resolved.username());
+            // per l'elenco delle sessioni dell'utente: da dove e con cosa si e' collegato
+            session.setAttribute(UserSessions.CLIENT_IP, request.getRemoteAddr());
+            String agent = request.getHeader("User-Agent");
+            if (agent != null) {
+                session.setAttribute(UserSessions.USER_AGENT,
+                        agent.length() > UserSessions.USER_AGENT_MAX ? agent.substring(0, UserSessions.USER_AGENT_MAX) : agent);
+            }
             if (oauth.getPrincipal() instanceof OidcUser oidc) {
                 session.setAttribute(ID_TOKEN, oidc.getIdToken().getTokenValue());
+                String sid = oidc.getIdToken().getClaimAsString("sid");
+                if (sid != null) {
+                    session.setAttribute(UserSessions.OIDC_SID, sid);
+                }
+                session.setAttribute(UserSessions.OIDC_SUB, oidc.getSubject());
+                if (sessionIndex != null) {
+                    try {
+                        sessionIndex.remember(sid, oidc.getSubject(), resolved.username());
+                    } catch (RuntimeException e) {
+                        log.warn("Indice del back-channel logout non aggiornato per {}: {}", resolved.username(), e.toString());
+                    }
+                }
             }
             log.info("Sessione creata per utente={} tenant={}", resolved.username(), resolved.tenantId());
             redirects.toSuccess(response, returnTo instanceof String url ? url : null);

@@ -28,6 +28,9 @@ services:
       DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:?impostare DEMO_USER_PASSWORD in .env}
     volumes:
       - ./keycloak/import:/opt/keycloak/data/import:ro
+    # back-channel logout: Keycloak chiama il BFF che gira sull'host (gia' risolto da Docker Desktop, serve su Linux)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8180:8180"
 

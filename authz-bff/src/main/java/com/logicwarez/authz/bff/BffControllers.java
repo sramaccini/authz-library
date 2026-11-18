@@ -40,7 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public final class BffControllers {
 
     /** Percorsi da lasciare pubblici nella SecurityFilterChain dell'applicazione. */
-    public static final String[] PUBLIC_PATHS = {"/bff/login"};
+    public static final String[] PUBLIC_PATHS = {"/bff/login", BackChannelLogout.PATH};
 
     private static final Pattern TENANT = Pattern.compile("^[A-Za-z0-9_-]{1,50}$");
     private static final Pattern USERNAME = Pattern.compile("^[A-Za-z0-9._@-]{1,150}$");
@@ -205,6 +205,25 @@ public final class BffControllers {
 
         public SessionAdminController(ObjectProvider<FindByIndexNameSessionRepository<? extends Session>> sessions) {
             this.sessions = sessions;
+        }
+
+        /** Sessioni aperte dell'utente, con le stesse regole della revoca: tenant dell'amministratore o tutte. */
+        @GetMapping("/bff/admin/users/{username}/sessions")
+        public ResponseEntity<?> list(@PathVariable String username, @AuthenticationPrincipal SessionContext admin) {
+            if (!USERNAME.matcher(username).matches()) {
+                return ResponseEntity.badRequest().build();
+            }
+            boolean global = admin.hasPermission(REVOKE_GLOBAL);
+            if (!global && !admin.hasPermission(REVOKE)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            FindByIndexNameSessionRepository<? extends Session> repository = sessions.getIfAvailable();
+            if (repository == null) {
+                return UserSessions.unavailable();
+            }
+            return ResponseEntity.ok(UserSessions.views(repository.findByPrincipalName(username), null).stream()
+                    .filter(s -> global || Objects.equals(s.tenant(), admin.tenantId()))
+                    .toList());
         }
 
         @DeleteMapping("/bff/admin/users/{username}/sessions")

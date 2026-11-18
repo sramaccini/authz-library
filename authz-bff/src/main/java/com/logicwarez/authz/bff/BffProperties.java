@@ -22,7 +22,18 @@ public record BffProperties(@Valid @DefaultValue Oidc oidc,
                             @Valid @DefaultValue Session session,
                             @Valid @NotNull Frontend frontend,
                             @Valid @DefaultValue LoginRateLimit loginRateLimit,
-                            @Valid @DefaultValue Bearer bearer) {
+                            @Valid @DefaultValue Bearer bearer,
+                            @Valid @DefaultValue BackchannelLogout backchannelLogout) {
+
+    /**
+     * OIDC Back-Channel Logout: lo IAM chiama {@code POST /bff/backchannel-logout} e il BFF chiude le sessioni
+     * collegate. Serve Redis con {@code spring.session.data.redis.repository-type=indexed}.
+     *
+     * @param redisKeyPrefix prefisso delle chiavi che collegano {@code sid}/{@code sub} dello IAM all'utente
+     */
+    public record BackchannelLogout(@DefaultValue("false") boolean enabled,
+                                    @DefaultValue("authz:oidc:") @NotBlank String redisKeyPrefix) {
+    }
 
     /** @param nameClaim claim con il nome completo da mostrare (campo name di /bff/user) */
     public record Oidc(@DefaultValue("iam") @NotBlank String registrationId,

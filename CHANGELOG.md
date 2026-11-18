@@ -2,6 +2,12 @@
 
 Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Semantic Versioning](https://semver.org/lang/it/).
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Licenza **Mozilla Public License 2.0** (`LICENSE`, `<licenses>` nel `pom.xml`): le librerie si possono usare, anche in Quadrava CE.
+
 ## [2.4.0] - 2026-11-18
 
 Richieste A8 e A9 di OpenDevTrack (ASVS 3.7.1, 4.3.3, 11.1.4). Tutto facoltativo; nessuna modifica ai contratti

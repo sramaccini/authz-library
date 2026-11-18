@@ -24,6 +24,14 @@
     <description>Librerie Spring Boot per login OIDC (BFF), sessione su Redis e RBAC per tenant.</description>
     <url>https://github.com/sramaccini/authz-library</url>
 
+    <licenses>
+        <license>
+            <name>MPL-2.0</name>
+            <url>https://mozilla.org/MPL/2.0/</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <scm>
         <url>https://github.com/sramaccini/authz-library</url>
         <connection>scm:git:https://github.com/sramaccini/authz-library.git</connection>

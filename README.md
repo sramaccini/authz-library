@@ -349,3 +349,7 @@ un percorso in formato corto 8.3 dove il JDK non riesce a creare il socket AF_UN
 - **Serializzazione JDK** degli attributi di sessione (`TolerantSessionSerializer`): un aggiornamento che cambia le
   classi in sessione chiude le sessioni aperte, senza errori (l'attributo illeggibile è ignorato e l'utente rifà il
   login).
+
+## Licenza
+
+[Mozilla Public License 2.0](LICENSE).

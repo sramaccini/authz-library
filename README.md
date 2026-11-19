@@ -42,12 +42,12 @@ Nel `pom.xml` dell'applicazione:
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-bff</artifactId>   <!-- porta con se' authz-session -->
-        <version>2.5.0</version>
+        <version>2.6.0</version>
     </dependency>
     <dependency>
         <groupId>com.logicwarez.authz</groupId>
         <artifactId>authz-rbac</artifactId>  <!-- facoltativo: RBAC su PostgreSQL -->
-        <version>2.5.0</version>
+        <version>2.6.0</version>
     </dependency>
 </dependencies>
 ```
@@ -142,6 +142,24 @@ springdoc è solo una dipendenza di test: le applicazioni che vogliono anche `/v
   `DELETE /bff/admin/users/{username}/sessions`.
 - Ogni modifica è registrata in `rbac_audit` (chi, quando, stato prima e dopo).
 - Primo amministratore globale in produzione: SQL una tantum, commento in fondo a `V2__rbac_administration.sql`.
+
+### Pseudonimizzazione di un utente (GDPR, ASVS 8.3.2)
+
+`POST /api/v1/admin/tenants/{tenant}/users/{username}/forget` con `{"pseudonym": "..."}`, o da codice
+`RbacAdminService.forgetUser(actor, tenant, username, pseudonym)`. Le regole sono quelle di `replaceUserRoles`
+(tenant dell'amministratore, mai se stessi), e l'utente non deve avere più ruoli sul tenant. Si tolgono prima con
+`replaceUserRoles` e una lista vuota, nella stessa transazione. Cosa fa:
+
+- Nelle voci di `rbac_audit` del tenant il nome diventa lo pseudonimo, sia in autore e oggetto sia in ogni valore
+  JSON uguale al nome (anche dentro liste e oggetti).
+- Se l'utente non ha più ruoli su nessun tenant, la riga `app_user` viene eliminata insieme ai token personali, e il
+  nome sparisce anche dalle voci senza tenant (token, attivazione). Un amministratore delegato non elimina un utente
+  che il globale ha disattivato: la riga resta e la risposta ha `userDeleted: false`.
+- Scrive una voce `USER_FORGOTTEN` che nomina solo lo pseudonimo.
+
+La risposta è `{"pseudonym", "tenant", "auditEntries", "userDeleted"}`. La chiamata si può ripetere: con l'utente
+già eliminato aggiorna solo l'audit del tenant. `findUser(actor, username)` restituisce un `Optional` e non lancia
+eccezioni, quindi dentro la transazione del chiamante non la segna rollback-only.
 
 ### Revoca delle sessioni
 
@@ -285,6 +303,8 @@ forwarded.header("Authorization", "Bearer " + token.get());
   credenziali. Con la rotazione dei refresh token di Keycloak (*Revoke Refresh Token* attivo) due rinnovi
   contemporanei della stessa sessione possono far fallire il secondo: meglio lasciarla spenta (predefinito) o
   ammettere un riuso (*Refresh Token Max Reuse*).
+- Inoltrando la risposta di un servizio, non copiarne l'header `X-Permissions-Version`: lo imposta il BFF sulla
+  sessione del front end e quello del servizio lo sovrascriverebbe.
 
 ### Schema dedicato
 
@@ -341,7 +361,7 @@ di un'altra versione). Richiedono Docker in esecuzione; senza Docker vengono sal
 
 ```bash
 set -a; . ./.env; set +a
-IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.5.0.jar --spring.profiles.active=dev
+IAM_CLIENT_SECRET="$BFF_CLIENT_SECRET" java -jar examples/authz-demo-app/target/authz-demo-app-2.6.0.jar --spring.profiles.active=dev
 ```
 
 Utenti demo (password `DEMO_USER_PASSWORD` di `.env`): `mario.rossi` (TENANT_A), `anna.bianchi` (TENANT_A e

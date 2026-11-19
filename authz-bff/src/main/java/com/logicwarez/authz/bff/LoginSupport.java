@@ -206,8 +206,10 @@ public final class LoginSupport {
             }
             Instant now = clock.instant();
             String name = oauth.getPrincipal().getAttribute(properties.oidc().nameClaim());
+            // l'email del resolver; se non la conosce (resolver con il solo username), il claim OIDC standard
+            String email = resolved.email() != null ? resolved.email() : oauth.getPrincipal().getAttribute("email");
             session.setAttribute(SessionContext.ATTRIBUTE, new SessionContext(resolved.username(), name,
-                    resolved.email(), resolved.tenantId(), resolved.tenants(), resolved.roles(),
+                    email, resolved.tenantId(), resolved.tenants(), resolved.roles(),
                     resolved.permissions(), now, now.plus(properties.session().absoluteTimeout())));
             session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, resolved.username());
             // per l'elenco delle sessioni dell'utente: da dove e con cosa si e' collegato

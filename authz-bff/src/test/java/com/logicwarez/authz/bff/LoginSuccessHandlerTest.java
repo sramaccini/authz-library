@@ -48,7 +48,8 @@ class LoginSuccessHandlerTest {
                 new StaticListableBeanFactory().getBeanProvider(OAuth2AuthorizedClientRepository.class),
                 new LoginSupport.LoginRedirects(properties), properties, Clock.fixed(NOW, ZoneOffset.UTC));
         var user = new DefaultOAuth2User(AuthorityUtils.NO_AUTHORITIES,
-                Map.of("preferred_username", "mario.rossi", "name", "Mario Rossi"), "preferred_username");
+                Map.of("preferred_username", "mario.rossi", "name", "Mario Rossi", "email", "mario@iam.it"),
+                "preferred_username");
         var response = new MockHttpServletResponse();
         handler.onAuthenticationSuccess(request, response, new OAuth2AuthenticationToken(user, List.of(), "iam"));
         return response;
@@ -69,6 +70,7 @@ class LoginSuccessHandlerTest {
                 .isEqualTo("mario.rossi");
         assertThat(request.getSession().getAttribute(LoginSupport.TENANT_HINT)).isNull();
         assertThat(ctx.name()).isEqualTo("Mario Rossi");
+        assertThat(ctx.email()).as("l'email del resolver prevale sul claim").isEqualTo("m@x.it");
         assertThat(ctx.tenants()).containsExactly(new SessionContext.Tenant("TENANT_B", "Sede B"));
         assertThat(response.getRedirectedUrl()).isEqualTo("https://app/");
     }
@@ -80,6 +82,8 @@ class LoginSuccessHandlerTest {
         var response = login((u, t) -> new AuthorizationResolver.Resolved(u, null, "T", List.of(), List.of()), request);
         assertThat(response.getRedirectedUrl()).isEqualTo("https://app/board?id=7");
         assertThat(request.getSession().getAttribute(LoginSupport.RETURN_TO)).isNull();
+        assertThat(((SessionContext) request.getSession().getAttribute(SessionContext.ATTRIBUTE)).email())
+                .as("resolver senza email: claim email dello IAM").isEqualTo("mario@iam.it");
     }
 
     @Test

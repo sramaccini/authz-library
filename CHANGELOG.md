@@ -2,6 +2,27 @@
 
 Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Semantic Versioning](https://semver.org/lang/it/).
 
+## [2.6.0] - 2026-11-19
+
+Richiesta A10 di OpenDevTrack (GDPR, ASVS 8.3.2; issue sramaccini/open-devtrack#24). Nessuna migrazione.
+
+### Aggiunto
+
+- `RbacAdminService.forgetUser(actor, tenant, username, pseudonym)` e
+  `POST /api/v1/admin/tenants/{tenant}/users/{username}/forget`. Nelle voci di audit del tenant il nome diventa lo
+  pseudonimo, in autore, oggetto e valori JSON. Se l'utente non ha più ruoli su nessun tenant, elimina la riga
+  `app_user` con i token personali e pseudonimizza anche le voci senza tenant. Scrive una voce `USER_FORGOTTEN` con
+  il solo pseudonimo. Le regole sono quelle di `replaceUserRoles`, e l'utente non deve avere ruoli sul tenant.
+  Partecipa alla transazione del chiamante.
+- `RbacAdminService.findUser(actor, username)`: un `Optional` che non lancia eccezioni per un utente sconosciuto.
+- Test in `RbacPostgresTest`.
+
+### Modificato
+
+- Login: se l'`AuthorizationResolver` non restituisce l'email (resolver che conosce solo lo username), la sessione
+  usa il claim `email` dello IAM; il cambio di tenant mantiene quella della sessione. Segnalazione di Quadrava.
+- README, token relay: non copiare l'`X-Permissions-Version` della risposta di un servizio inoltrato.
+
 ## [2.5.0] - 2026-11-18
 
 ### Aggiunto

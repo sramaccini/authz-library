@@ -163,7 +163,7 @@ public final class BffControllers {
                 return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service temporarily unavailable");
             }
             request.getSession().setAttribute(SessionContext.ATTRIBUTE, new SessionContext(resolved.username(),
-                    current.name(), resolved.email(), resolved.tenantId(), resolved.tenants(), resolved.roles(),
+                    current.name(), resolved.email() != null ? resolved.email() : current.email(), resolved.tenantId(), resolved.tenants(), resolved.roles(),
                     resolved.permissions(), current.createdAt(), current.expiresAt()));
             log.info("Cambio di tenant: utente={} tenant={}", resolved.username(), resolved.tenantId());
             return ResponseEntity.noContent().build();

@@ -1,6 +1,8 @@
 package com.logicwarez.authz.rbac.admin;
 
 import com.logicwarez.authz.rbac.admin.AdminApi.AuditEntry;
+import com.logicwarez.authz.rbac.admin.AdminApi.ForgetRequest;
+import com.logicwarez.authz.rbac.admin.AdminApi.ForgetResult;
 import com.logicwarez.authz.rbac.admin.AdminApi.PermissionView;
 import com.logicwarez.authz.rbac.admin.AdminApi.RoleAssignmentRequest;
 import com.logicwarez.authz.rbac.admin.AdminApi.RoleCreateRequest;
@@ -116,6 +118,16 @@ public class RbacAdminController {
                                      @PathVariable @Pattern(regexp = AdminApi.USERNAME) String username,
                                      @Valid @RequestBody RoleAssignmentRequest request) {
         return service.replaceUserRoles(AdminScope.of(session), tenant, username, request);
+    }
+
+    @PostMapping("/tenants/{tenant}/users/{username}/forget")
+    @Operation(summary = "Pseudonimizza l'utente nell'audit del tenant (senza ruoli sul tenant); elimina l'utente "
+            + "se non ha piu' ruoli")
+    public ForgetResult forgetUser(@AuthenticationPrincipal SessionContext session,
+                                   @PathVariable @Pattern(regexp = AdminApi.TENANT_CODE) String tenant,
+                                   @PathVariable @Pattern(regexp = AdminApi.USERNAME) String username,
+                                   @Valid @RequestBody ForgetRequest request) {
+        return service.forgetUser(AdminScope.of(session), tenant, username, request.pseudonym());
     }
 
     @GetMapping("/users/{username}")

@@ -1,6 +1,7 @@
 package com.logicwarez.authz.rbac.admin;
 
 import com.logicwarez.authz.rbac.admin.AdminApi.AuditEntry;
+import com.logicwarez.authz.rbac.admin.AdminApi.ForgetResult;
 import com.logicwarez.authz.rbac.admin.AdminApi.PermissionView;
 import com.logicwarez.authz.rbac.admin.AdminApi.RoleAssignmentRequest;
 import com.logicwarez.authz.rbac.admin.AdminApi.RoleCreateRequest;
@@ -17,11 +18,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
@@ -205,6 +210,89 @@ public class RbacAdminService {
         audit(actor, "USER_ROLES_REPLACED", "USER", username, tenant,
                 Map.of("roles", before), Map.of("roles", after));
         return view(actor, user);
+    }
+
+    /**
+     * L'utente, se esiste, con le assegnazioni visibili all'amministratore. A differenza di {@link #user} non lancia
+     * eccezioni per un utente sconosciuto: dentro la transazione del chiamante non la segna rollback-only.
+     */
+    @Transactional(readOnly = true)
+    public Optional<UserView> findUser(AdminScope actor, String username) {
+        return repository.findUser(username).map(user -> view(actor, user));
+    }
+
+    /**
+     * Toglie il nome dell'utente dal tenant (pseudonimizzazione, ASVS 8.3.2), dopo che l'applicazione gli ha tolto i
+     * ruoli ({@link #replaceUserRoles} con lista vuota), nella stessa transazione:
+     * <ul>
+     *   <li>nelle voci di audit del tenant il nome diventa {@code pseudonym} in autore, oggetto e valori JSON;</li>
+     *   <li>se l'utente non ha piu' ruoli su nessun tenant la sua riga (email, token personali) viene eliminata e il nome
+     *       sparisce anche dalle voci di audit senza tenant (token, attivazione); un amministratore delegato non
+     *       elimina un utente disattivato dall'amministratore globale (la riga resta, {@code userDeleted} false);</li>
+     *   <li>una voce USER_FORGOTTEN con il solo pseudonimo.</li>
+     * </ul>
+     * Regole di replaceUserRoles: tenant dell'amministratore, mai se stessi; l'utente non deve avere ruoli sul tenant
+     * (quindi nemmeno ruoli con permessi globali). Si puo' ripetere: con l'utente gia' eliminato aggiorna solo l'audit.
+     */
+    @Transactional
+    public ForgetResult forgetUser(AdminScope actor, String tenant, String username, String pseudonym) {
+        actor.requireTenant(tenant);
+        actor.requireNotSelf(username);
+        if (pseudonym == null || !pseudonym.matches(AdminApi.USERNAME) || pseudonym.equals(username)) {
+            throw AdminProblem.invalid("invalid-pseudonym", "The pseudonym must be a valid username other than the user's");
+        }
+        if (!repository.lockTenant(tenant)) {
+            throw AdminProblem.notFound("Unknown tenant");
+        }
+        if (repository.findUser(pseudonym).isPresent()) {
+            throw AdminProblem.conflict("pseudonym-exists", "The pseudonym is the username of an existing user");
+        }
+        Optional<UserRow> user = repository.findUser(username);
+        if (user.isPresent() && repository.userAssignments(user.get().id()).containsKey(tenant)) {
+            throw AdminProblem.conflict("user-has-roles", "Remove the user's roles on the tenant first");
+        }
+        boolean delete = user.isPresent() && !repository.hasAnyRole(user.get().id())
+                && (actor.isGlobal() || user.get().active());
+        String quoted = json.writeValueAsString(username);
+        int entries = 0;
+        for (RbacAdminRepository.AuditRow row : repository.auditMentioning(tenant, delete, username, quoted)) {
+            repository.updateAudit(new RbacAdminRepository.AuditRow(row.id(),
+                    username.equals(row.actor()) ? pseudonym : row.actor(),
+                    username.equals(row.target()) ? pseudonym : row.target(),
+                    pseudonymize(row.beforeState(), username, pseudonym),
+                    pseudonymize(row.afterState(), username, pseudonym)));
+            entries++;
+        }
+        if (delete) {
+            repository.deleteUser(user.get().id());
+        }
+        ForgetResult result = new ForgetResult(pseudonym, tenant, entries, delete);
+        audit(actor, "USER_FORGOTTEN", "USER", pseudonym, tenant, null, result);
+        return result;
+    }
+
+    /** Lo stato JSON con ogni stringa uguale al nome sostituita dallo pseudonimo (anche dentro liste e oggetti). */
+    private String pseudonymize(String state, String username, String pseudonym) {
+        if (state == null) {
+            return null;
+        }
+        return json.writeValueAsString(replaceStrings(json.readTree(state), username, pseudonym));
+    }
+
+    private JsonNode replaceStrings(JsonNode node, String from, String to) {
+        if (node.isString()) {
+            return from.equals(node.asString()) ? json.getNodeFactory().stringNode(to) : node;
+        }
+        if (node instanceof ObjectNode object) {
+            for (Map.Entry<String, JsonNode> property : List.copyOf(object.properties())) {
+                object.replace(property.getKey(), replaceStrings(property.getValue(), from, to));
+            }
+        } else if (node instanceof ArrayNode array) {
+            for (int i = 0; i < array.size(); i++) {
+                array.set(i, replaceStrings(array.get(i), from, to));
+            }
+        }
+        return node;
     }
 
     // --- Audit ---

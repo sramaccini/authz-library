@@ -288,6 +288,52 @@
         "tags" : [ "Amministrazione RBAC" ]
       }
     },
+    "/api/v1/admin/tenants/{tenant}/users/{username}/forget" : {
+      "post" : {
+        "operationId" : "forgetUser",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "tenant",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "pattern" : "^[A-Za-z0-9_-]{1,50}$"
+          }
+        }, {
+          "in" : "path",
+          "name" : "username",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "pattern" : "^[A-Za-z0-9._@-]{1,150}$"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ForgetRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ForgetResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Pseudonimizza l'utente nell'audit del tenant (senza ruoli sul tenant); elimina l'utente se non ha piu' ruoli",
+        "tags" : [ "Amministrazione RBAC" ]
+      }
+    },
     "/api/v1/admin/tenants/{tenant}/users/{username}/roles" : {
       "put" : {
         "operationId" : "replaceUserRoles",
@@ -464,6 +510,34 @@
           },
           "tenant_id" : {
             "type" : "string"
+          }
+        }
+      },
+      "ForgetRequest" : {
+        "type" : "object",
+        "properties" : {
+          "pseudonym" : {
+            "type" : "string",
+            "pattern" : "^[A-Za-z0-9._@-]{1,150}$"
+          }
+        },
+        "required" : [ "pseudonym" ]
+      },
+      "ForgetResult" : {
+        "type" : "object",
+        "properties" : {
+          "auditEntries" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "pseudonym" : {
+            "type" : "string"
+          },
+          "tenant" : {
+            "type" : "string"
+          },
+          "userDeleted" : {
+            "type" : "boolean"
           }
         }
       },

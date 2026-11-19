@@ -253,7 +253,61 @@ public class RbacAdminRepository {
         }
     }
 
+    public boolean hasAnyRole(UUID userId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM user_role WHERE user_id = :userId)")
+                .param("userId", userId)
+                .query(Boolean.class)
+                .single();
+    }
+
+    /** Elimina l'utente; i suoi token personali vanno con lui (ON DELETE CASCADE). */
+    public void deleteUser(UUID userId) {
+        jdbc.sql("DELETE FROM app_user WHERE id = :userId").param("userId", userId).update();
+    }
+
     // --- Audit ---
+
+    public record AuditRow(long id, String actor, String target, String beforeState, String afterState) {
+    }
+
+    /**
+     * Voci di audit del tenant (e, con {@code withoutTenant}, quelle senza tenant) che nominano l'utente come autore,
+     * come oggetto o in uno stato JSON. {@code quoted} e' il nome come stringa JSON, cercato nel testo degli stati.
+     */
+    public List<AuditRow> auditMentioning(String tenant, boolean withoutTenant, String username, String quoted) {
+        String like = "%" + quoted.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        return jdbc.sql("""
+                        SELECT id, actor, target, before_state::text, after_state::text
+                          FROM rbac_audit
+                         WHERE (tenant_id = :tenant OR (:withoutTenant AND tenant_id IS NULL))
+                           AND (actor = :username OR target = :username
+                                OR before_state::text LIKE :like ESCAPE '\\'
+                                OR after_state::text LIKE :like ESCAPE '\\')
+                         ORDER BY id
+                         FOR UPDATE
+                        """)
+                .param("tenant", tenant)
+                .param("withoutTenant", withoutTenant)
+                .param("username", username)
+                .param("like", like)
+                .query((rs, n) -> new AuditRow(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getString(5)))
+                .list();
+    }
+
+    public void updateAudit(AuditRow row) {
+        jdbc.sql("""
+                        UPDATE rbac_audit SET actor = :actor, target = :target,
+                               before_state = CAST(:before AS JSONB), after_state = CAST(:after AS JSONB)
+                         WHERE id = :id
+                        """)
+                .param("id", row.id())
+                .param("actor", row.actor())
+                .param("target", row.target())
+                .param("before", row.beforeState())
+                .param("after", row.afterState())
+                .update();
+    }
 
     public void insertAudit(AdminScope actor, String action, String targetType, String target, String tenantId,
                             String beforeJson, String afterJson) {

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import com.logicwarez.authz.rbac.admin.AdminApi.ForgetResult;
 import com.logicwarez.authz.rbac.admin.AdminApi.RoleAssignmentRequest;
 import com.logicwarez.authz.rbac.admin.AdminApi.RoleCreateRequest;
 import com.logicwarez.authz.rbac.admin.AdminApi.RoleUpdateRequest;
@@ -67,7 +68,7 @@ class RbacPostgresTest {
         List<String> versions = jdbc.sql("SELECT version FROM authz_schema_history WHERE success ORDER BY installed_rank")
                 .query(String.class).list();
         assertThat(versions).containsExactly("1", "2", "3", "4");
-        assertThat(jdbc.sql("SELECT permission_code FROM app_permission ORDER BY 1").query(String.class).list())
+        assertThat(jdbc.sql("SELECT permission_code FROM app_permission WHERE permission_code LIKE 'authz.%' ORDER BY 1").query(String.class).list())
                 .containsExactly("authz.rbac.manage", "authz.rbac.manageglobal",
                         "authz.session.revoke", "authz.session.revokeglobal");
     }
@@ -248,7 +249,85 @@ class RbacPostgresTest {
                 new RoleUpdateRequest("Prova 3", List.of("authz.rbac.manageglobal"), version + 1)), "global-permission");
     }
 
+    // --- Pseudonimizzazione ---
+
+    @Test
+    void forgetUserPseudonimizzaLAuditDelTenantEdEliminaLUtente() {
+        String a = tenant("A"), b = tenant("B");
+        String user = user();
+        String similar = user(user + "z");
+        String role = role("demo.item.read");
+        AdminScope delegate = new AdminScope("delegato-" + suffix(), a, Set.of(AdminScope.MANAGE));
+        admin.replaceUserRoles(delegate, a, user, new RoleAssignmentRequest(List.of(role)));
+        UUID token = tokens.create(user, "CI", 30).id();
+        audit(user, a, "ITEM_CHANGED", "ITEM", "42",
+                "{\"owner\": \"" + user + "\", \"watchers\": [\"" + similar + "\", {\"by\": \"" + user + "\"}]}");
+        audit("altro", b, "ITEM_CHANGED", "USER", user, "{\"owner\": \"" + user + "\"}");
+
+        assertProblem(() -> admin.forgetUser(delegate, a, user, "anonimo-" + suffix()), "user-has-roles");
+        admin.replaceUserRoles(delegate, a, user, new RoleAssignmentRequest(List.of()));
+        String pseudonym = "anonimo-" + suffix();
+        ForgetResult result = admin.forgetUser(delegate, a, user, pseudonym);
+
+        assertThat(result).isEqualTo(new ForgetResult(pseudonym, a, 4, true));
+        assertThat(admin.findUser(delegate, user)).isEmpty();
+        assertThat(jdbc.sql("SELECT count(*) FROM personal_access_token WHERE id = ?").param(token).query(Long.class).single())
+                .as("token eliminati con l'utente").isZero();
+        assertThat(jdbc.sql("""
+                        SELECT count(*) FROM rbac_audit WHERE (tenant_id = ? OR tenant_id IS NULL)
+                           AND (actor = ? OR target = ? OR before_state::text LIKE ? OR after_state::text LIKE ?)""")
+                .param(a).param(user).param(user).param("%\"" + user + "\"%").param("%\"" + user + "\"%")
+                .query(Long.class).single()).as("nome sparito dal tenant e dalle voci senza tenant").isZero();
+        assertThat(jdbc.sql("SELECT after_state::text FROM rbac_audit WHERE tenant_id = ? AND action = 'ITEM_CHANGED'")
+                .param(a).query(String.class).single())
+                .contains("\"owner\": \"" + pseudonym + "\"", "\"by\": \"" + pseudonym + "\"", "\"" + similar + "\"");
+        assertThat(jdbc.sql("SELECT count(*) FROM rbac_audit WHERE tenant_id = ? AND target = ? AND after_state::text LIKE ?")
+                .param(b).param(user).param("%" + user + "%").query(Long.class).single())
+                .as("altro tenant invariato").isEqualTo(1);
+        assertThat(jdbc.sql("SELECT after_state::text FROM rbac_audit WHERE action = 'USER_FORGOTTEN' AND target = ?")
+                .param(pseudonym).query(String.class).single()).doesNotContain(user);
+
+        assertThat(admin.forgetUser(delegate, a, user, pseudonym + "x")).as("si puo' ripetere")
+                .isEqualTo(new ForgetResult(pseudonym + "x", a, 0, false));
+    }
+
+    @Test
+    void forgetUserRegoleDiReplaceUserRoles() {
+        String a = tenant("A"), b = tenant("B");
+        String user = user();
+        String role = role("demo.item.read");
+        assign(user, role, b);
+        AdminScope delegate = new AdminScope("delegato-" + suffix(), a, Set.of(AdminScope.MANAGE));
+
+        assertProblem(() -> admin.forgetUser(delegate, b, user, "anonimo-" + suffix()), "tenant-out-of-scope");
+        assertProblem(() -> admin.forgetUser(delegate, a, delegate.username(), "anonimo-" + suffix()),
+                "self-modification");
+        assertProblem(() -> admin.forgetUser(delegate, a, user, user), "invalid-pseudonym");
+        assertProblem(() -> admin.forgetUser(delegate, a, user, "non valido"), "invalid-pseudonym");
+        assertProblem(() -> admin.forgetUser(delegate, a, user, user()), "pseudonym-exists");
+        AdminScope global = new AdminScope("globale-" + suffix(), "DEFAULT", Set.of(AdminScope.MANAGE_GLOBAL));
+        assertProblem(() -> admin.forgetUser(global, "NESSUNO_" + suffix(), user, "anonimo-" + suffix()), "not-found");
+
+        assertThat(admin.forgetUser(delegate, a, user, "anonimo-" + suffix()).userDeleted())
+                .as("ha ancora ruoli su un altro tenant").isFalse();
+        assertThat(admin.findUser(delegate, user)).hasValueSatisfying(u -> assertThat(u.username()).isEqualTo(user));
+
+        String inactive = user();
+        jdbc.sql("UPDATE app_user SET is_active = FALSE WHERE username = ?").param(inactive).update();
+        assertThat(admin.forgetUser(delegate, a, inactive, "anonimo-" + suffix()).userDeleted())
+                .as("il delegato non elimina un utente disattivato").isFalse();
+        assertThat(admin.forgetUser(global, a, inactive, "anonimo-" + suffix()).userDeleted()).isTrue();
+        assertThat(admin.findUser(global, "sconosciuto-" + suffix())).isEmpty();
+    }
+
     // --- Dati di prova ---
+
+    private void audit(String actor, String tenant, String action, String targetType, String target, String after) {
+        jdbc.sql("""
+                INSERT INTO rbac_audit (actor, action, target_type, target, tenant_id, after_state)
+                VALUES (?, ?, ?, ?, ?, CAST(? AS JSONB))""")
+                .param(actor).param(action).param(targetType).param(target).param(tenant).param(after).update();
+    }
 
     private String tenant(String name) {
         String code = name + "_" + suffix().toUpperCase();

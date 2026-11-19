@@ -72,6 +72,14 @@ public final class AdminApi {
     public record RoleAssignmentRequest(@NotNull @Size(max = 50) List<@Pattern(regexp = ROLE_CODE) String> roles) {
     }
 
+    /** Richiesta di pseudonimizzazione: il nome che sostituisce quello dell'utente nel registro di audit. */
+    public record ForgetRequest(@NotNull @Pattern(regexp = USERNAME) String pseudonym) {
+    }
+
+    /** Esito della pseudonimizzazione: voci di audit aggiornate e se la riga dell'utente e' stata eliminata. */
+    public record ForgetResult(String pseudonym, String tenant, int auditEntries, boolean userDeleted) {
+    }
+
     public record AuditEntry(long id,
                              @JsonProperty("occurred_at") OffsetDateTime occurredAt,
                              String actor,

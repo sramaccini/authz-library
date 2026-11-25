@@ -4,6 +4,8 @@ Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Sema
 
 ## [Non rilasciato]
 
+## [2.7.0] - 2026-11-25
+
 Richiesta di Quadrava CE: ruoli operativi, uno alla volta (ADR-28, `contracts/bff.yaml` 0.6.0). Migrazione `V5`.
 
 ### Aggiunto

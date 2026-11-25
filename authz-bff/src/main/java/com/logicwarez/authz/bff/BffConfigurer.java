@@ -3,6 +3,11 @@ package com.logicwarez.authz.bff;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import com.logicwarez.authz.session.AuthorizationResolver;
 import com.logicwarez.authz.session.PersonalAccessTokenVerifier;
@@ -11,6 +16,7 @@ import com.logicwarez.authz.session.SessionContextConfigurer;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,8 +52,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * </pre>
  * Login OIDC, SessionContext in Spring Session, 401 sulle chiamate senza sessione (mai redirect), CSRF per
  * applicazioni a pagina singola (cookie XSRF-TOKEN leggibile dalla pagina, header X-XSRF-TOKEN sulle scritture),
- * controllo Origin, header X-Permissions-Version e limite di frequenza sul login: le regole di contracts/bff.yaml
- * di Quadrava.
+ * controllo Origin, header X-Permissions-Version, X-Active-Role con il ruolo operativo della sessione e limite di
+ * frequenza sul login: le regole di contracts/bff.yaml di Quadrava.
  */
 public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSecurity> {
 
@@ -89,6 +95,7 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
         BffProperties properties = context.getBean(BffProperties.class);
         http.addFilterAfter(new OriginCheckFilter(context.getBean(LoginSupport.OriginPolicy.class)),
                 SecurityContextHolderFilter.class);
+        http.addFilterAfter(new ActiveRoleFilter(), SecurityContextHolderFilter.class);
         http.addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class);
         http.addFilterAfter(new PermissionsVersionFilter(context.getBean(EffectivePermissions.class)), CsrfFilter.class);
         if (properties.sessionRateLimit().enabled()) {
@@ -162,6 +169,52 @@ public class BffConfigurer extends AbstractHttpConfigurer<BffConfigurer, HttpSec
                 token.getToken();
             }
             chain.doFilter(request, response);
+        }
+    }
+
+    /**
+     * Header {@code X-Active-Role} (ADR-28 di Quadrava): per l'applicazione, e per i servizi a cui inoltra le
+     * richieste, e' il ruolo operativo attivo della sessione, mai quello mandato dalla pagina; assente senza ruolo
+     * operativo e per le richieste con un token, che hanno i permessi di tutti i ruoli.
+     */
+    static final class ActiveRoleFilter extends OncePerRequestFilter {
+
+        static final String HEADER = "X-Active-Role";
+
+        @Override
+        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+                throws ServletException, IOException {
+            chain.doFilter(new HttpServletRequestWrapper(request) {
+                // letto quando serve: il filtro dei token, che segna la richiesta, puo' venire dopo questo
+                private String role() {
+                    return request.getAttribute(BearerTokenFilter.ATTRIBUTE) != null ? null
+                            : SessionContext.from(request).map(SessionContext::currentRole).orElse(null);
+                }
+
+                @Override
+                public String getHeader(String name) {
+                    return HEADER.equalsIgnoreCase(name) ? role() : super.getHeader(name);
+                }
+
+                @Override
+                public Enumeration<String> getHeaders(String name) {
+                    if (!HEADER.equalsIgnoreCase(name)) {
+                        return super.getHeaders(name);
+                    }
+                    String role = role();
+                    return Collections.enumeration(role == null ? List.of() : List.of(role));
+                }
+
+                @Override
+                public Enumeration<String> getHeaderNames() {
+                    List<String> names = Collections.list(super.getHeaderNames()).stream()
+                            .filter(n -> !HEADER.equalsIgnoreCase(n)).collect(Collectors.toCollection(ArrayList::new));
+                    if (role() != null) {
+                        names.add(HEADER);
+                    }
+                    return Collections.enumeration(names);
+                }
+            }, response);
         }
     }
 

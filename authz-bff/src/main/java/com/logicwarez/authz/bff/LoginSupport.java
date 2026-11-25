@@ -210,7 +210,8 @@ public final class LoginSupport {
             String email = resolved.email() != null ? resolved.email() : oauth.getPrincipal().getAttribute("email");
             session.setAttribute(SessionContext.ATTRIBUTE, new SessionContext(resolved.username(), name,
                     email, resolved.tenantId(), resolved.tenants(), resolved.roles(),
-                    resolved.permissions(), now, now.plus(properties.session().absoluteTimeout())));
+                    resolved.permissions(), now, now.plus(properties.session().absoluteTimeout()),
+                    resolved.operationalRoles(), resolved.currentRole()));
             session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, resolved.username());
             // per l'elenco delle sessioni dell'utente: da dove e con cosa si e' collegato
             session.setAttribute(UserSessions.CLIENT_IP, request.getRemoteAddr());

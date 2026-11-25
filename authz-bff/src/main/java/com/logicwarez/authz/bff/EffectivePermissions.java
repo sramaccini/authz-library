@@ -30,7 +30,8 @@ public class EffectivePermissions {
     }
 
     public String version(SessionContext session) {
-        return contributors.isEmpty() ? session.permissionsVersion() : SessionContext.versionOf(of(session));
+        return contributors.isEmpty() ? session.permissionsVersion()
+                : SessionContext.versionOf(of(session), session.currentRole());
     }
 
     /** Controllo di un permesso, su una risorsa se indicata; {@code effective} e' il risultato di {@link #of}. */

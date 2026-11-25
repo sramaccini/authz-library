@@ -110,6 +110,78 @@ class AuthorizationServiceTest {
                 .isInstanceOf(UserNotAuthorizedException.class);
     }
 
+    // --- Ruoli operativi (ADR-28 di Quadrava) ---
+
+    /** Un ruolo di base e due operativi, la separazione dei compiti: chi inserisce un ordine non lo approva. */
+    private void operationalGrants() {
+        when(repository.findGrants(USER_ID)).thenReturn(List.of(
+                new GrantRow("TENANT_A", null, "USER", "profile.profile.read", "Utente", true),
+                new GrantRow("TENANT_A", null, "CLERK", "orders.order.create", "Addetto", false),
+                new GrantRow("TENANT_A", null, "APPROVER", "orders.order.approve", null, false),
+                new GrantRow("TENANT_B", null, "AUDITOR", "audit.log.read", "Revisore", false)));
+    }
+
+    private void user(String lastTenant, String lastRole) {
+        when(repository.findActiveUser("mario.rossi")).thenReturn(Optional.of(
+                new ActiveUser(USER_ID, "mario.rossi", "mario.rossi@example.org", lastTenant, lastRole)));
+    }
+
+    @Test
+    void operationalRolesOneAtATimeWithTheBaseRoles() {
+        operationalGrants();
+
+        AuthorizationContext ctx = service.resolve("mario.rossi", "TENANT_A", "CLERK");
+
+        assertThat(ctx.currentRole()).isEqualTo("CLERK");
+        // senza descrizione si mostra il codice; i ruoli di base non si scelgono
+        assertThat(ctx.operationalRoles()).containsExactly(Map.entry("APPROVER", "APPROVER"),
+                Map.entry("CLERK", "Addetto"));
+        assertThat(ctx.roles()).containsExactly("APPROVER", "CLERK", "USER");
+        assertThat(ctx.permissions()).containsExactly("orders.order.create", "profile.profile.read");
+        verify(repository).updateLastRole(USER_ID, "CLERK");
+    }
+
+    @Test
+    void withoutAChoiceTheLastRoleThenTheFirst() {
+        user("TENANT_A", "CLERK");
+        operationalGrants();
+        assertThat(service.resolve("mario.rossi", null).currentRole()).as("ultimo usato").isEqualTo("CLERK");
+
+        user("TENANT_A", "AUDITOR"); // ultimo ruolo, ma di un altro tenant
+        assertThat(service.resolve("mario.rossi", null).currentRole()).as("primo per codice").isEqualTo("APPROVER");
+        // un ruolo che l'utente non ha sul tenant non si attiva: vale l'ultimo o il primo
+        assertThat(service.resolve("mario.rossi", "TENANT_A", "ADMIN").permissions())
+                .containsExactly("orders.order.approve", "profile.profile.read");
+    }
+
+    @Test
+    void withoutOperationalRolesAllTheRolesAsBefore() {
+        when(repository.findGrants(USER_ID)).thenReturn(List.of(
+                new GrantRow("TENANT_A", null, "DOCTOR", "clinical.patient.write"),
+                new GrantRow("TENANT_A", null, "CUP_OPERATOR", "booking.appointment.manage")));
+
+        AuthorizationContext ctx = service.resolve("mario.rossi", null, "DOCTOR");
+
+        assertThat(ctx.currentRole()).isNull();
+        assertThat(ctx.operationalRoles()).isEmpty();
+        assertThat(ctx.permissions()).containsExactly("booking.appointment.manage", "clinical.patient.write");
+        verify(repository, never()).updateLastRole(any(), any());
+    }
+
+    @Test
+    void aTokenHasAllTheRolesAndChangesNoLastRole() {
+        user("TENANT_A", "CLERK");
+        operationalGrants();
+
+        AuthorizationContext ctx = service.resolve("mario.rossi", "TENANT_A", false);
+
+        assertThat(ctx.currentRole()).isNull();
+        assertThat(ctx.operationalRoles()).isEmpty();
+        assertThat(ctx.permissions()).containsExactly("orders.order.approve", "orders.order.create",
+                "profile.profile.read");
+        verify(repository, never()).updateLastRole(any(), any());
+    }
+
     @Test
     void roleWithoutPermissionsIsKept() {
         when(repository.findGrants(USER_ID)).thenReturn(List.of(new GrantRow("TENANT_A", null, "VIEWER", null)));

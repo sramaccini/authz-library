@@ -24,7 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
  * disabilitare parti dell'interfaccia, il controllo vero resta su ogni API. I permessi sono quelli del tenant della
  * sessione, fissati al login o al cambio di tenant, piu' quelli dei {@link PermissionContributor} dell'applicazione,
  * che decidono anche i controlli con una risorsa. {@code app} e' richiesto dal contratto ma non filtra
- * (un'applicazione per back end).
+ * (un'applicazione per back end). Con i ruoli operativi i permessi sono quelli del ruolo attivo della sessione: un
+ * {@code role} mandato dalla pagina (query o corpo) e' ignorato, la pagina non puo' allargare i propri permessi.
  */
 @RestController
 public class AuthzController {
@@ -47,7 +48,7 @@ public class AuthzController {
             return BffControllers.problem(HttpStatus.BAD_REQUEST, "Missing app parameter");
         }
         SortedSet<String> effective = permissions.of(session);
-        String version = SessionContext.versionOf(effective);
+        String version = SessionContext.versionOf(effective, session.currentRole());
         return ResponseEntity.ok().header(VERSION_HEADER, version)
                 .body(new Capabilities(List.copyOf(effective), version));
     }
@@ -74,7 +75,7 @@ public class AuthzController {
                         c.permission(), c.resource() == null ? null
                                 : new PermissionContributor.Resource(c.resource().type(), c.resource().id()))))
                 .toList();
-        return ResponseEntity.ok().header(VERSION_HEADER, SessionContext.versionOf(effective))
+        return ResponseEntity.ok().header(VERSION_HEADER, SessionContext.versionOf(effective, session.currentRole()))
                 .body(new CheckResponse(results));
     }
 

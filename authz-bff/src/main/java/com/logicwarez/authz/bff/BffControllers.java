@@ -13,6 +13,7 @@ import com.logicwarez.authz.session.SessionContext;
 import com.logicwarez.authz.session.UserNotAuthorizedException;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Endpoint del contratto BFF di Quadrava (contracts/bff.yaml): ingresso del login, utente corrente, cambio di
- * tenant, logout; piu' la revoca delle sessioni per l'amministrazione.
+ * tenant e di ruolo operativo, logout; piu' la revoca delle sessioni per l'amministrazione.
  */
 public final class BffControllers {
 
@@ -127,10 +128,13 @@ public final class BffControllers {
 
         private final LoginSupport.IamLogout iamLogout;
         private final AuthorizationResolver resolver;
+        private final EffectivePermissions permissions;
 
-        public SessionController(LoginSupport.IamLogout iamLogout, AuthorizationResolver resolver) {
+        public SessionController(LoginSupport.IamLogout iamLogout, AuthorizationResolver resolver,
+                                 EffectivePermissions permissions) {
             this.iamLogout = iamLogout;
             this.resolver = resolver;
+            this.permissions = permissions;
         }
 
         /** Utente della sessione per la UI: niente token, niente identificativo di sessione, niente permessi. */
@@ -155,18 +159,61 @@ public final class BffControllers {
             }
             AuthorizationResolver.Resolved resolved;
             try {
-                resolved = resolver.resolve(current.username(), body.tenant());
+                // lo stesso ruolo operativo, se l'utente lo ha anche sul nuovo tenant
+                resolved = resolver.resolve(current.username(), body.tenant(), current.currentRole());
             } catch (UserNotAuthorizedException e) {
                 return problem(HttpStatus.NOT_FOUND, "Tenant not offered to the user");
             } catch (RuntimeException e) {
                 log.error("Cambio di tenant fallito per {}: {}", current.username(), e.toString());
                 return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service temporarily unavailable");
             }
-            request.getSession().setAttribute(SessionContext.ATTRIBUTE, new SessionContext(resolved.username(),
-                    current.name(), resolved.email() != null ? resolved.email() : current.email(), resolved.tenantId(), resolved.tenants(), resolved.roles(),
-                    resolved.permissions(), current.createdAt(), current.expiresAt()));
+            request.getSession().setAttribute(SessionContext.ATTRIBUTE, sessionOf(resolved, current));
             log.info("Cambio di tenant: utente={} tenant={}", resolved.username(), resolved.tenantId());
             return ResponseEntity.noContent().build();
+        }
+
+        /**
+         * Attiva un altro dei ruoli operativi offerti all'utente (ADR-28 di Quadrava): i permessi si risolvono di
+         * nuovo, per i ruoli di base piu' quello scelto, e cambia la loro versione; tenant e scadenza assoluta restano.
+         * POST con token CSRF, mai GET. Il corpo e' esattamente {@code {"role": "<id>"}}.
+         */
+        @PostMapping("/bff/role")
+        public ResponseEntity<?> switchRole(@RequestBody Map<String, Object> body,
+                                            @AuthenticationPrincipal SessionContext current,
+                                            HttpServletRequest request, HttpServletResponse response) {
+            if (body == null || body.size() != 1 || !(body.get("role") instanceof String role) || role.isBlank()) {
+                return problem(HttpStatus.BAD_REQUEST, "The body is {\"role\": \"<id>\"}");
+            }
+            if (!current.offersRole(role)) {
+                return problem(HttpStatus.NOT_FOUND, "Role not offered to the user");
+            }
+            AuthorizationResolver.Resolved resolved;
+            try {
+                resolved = resolver.resolve(current.username(), current.tenantId(), role);
+            } catch (UserNotAuthorizedException e) {
+                return problem(HttpStatus.NOT_FOUND, "Role not offered to the user");
+            } catch (RuntimeException e) {
+                log.error("Cambio di ruolo fallito per {}: {}", current.username(), e.toString());
+                return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service temporarily unavailable");
+            }
+            // ruolo tolto nel frattempo: la sessione resta com'era
+            if (!role.equals(resolved.currentRole())) {
+                return problem(HttpStatus.NOT_FOUND, "Role not offered to the user");
+            }
+            SessionContext next = sessionOf(resolved, current);
+            request.getSession().setAttribute(SessionContext.ATTRIBUTE, next);
+            // la versione dei permessi del nuovo ruolo (il filtro della versione ha scritto quella precedente)
+            response.setHeader(AuthzController.VERSION_HEADER, permissions.version(next));
+            log.info("Cambio di ruolo: utente={} tenant={} ruolo={}", resolved.username(), resolved.tenantId(), role);
+            return ResponseEntity.noContent().build();
+        }
+
+        /** La sessione con ruoli e permessi risolti di nuovo; nome, email del login e scadenza assoluta restano. */
+        private static SessionContext sessionOf(AuthorizationResolver.Resolved resolved, SessionContext current) {
+            return new SessionContext(resolved.username(), current.name(),
+                    resolved.email() != null ? resolved.email() : current.email(), resolved.tenantId(),
+                    resolved.tenants(), resolved.roles(), resolved.permissions(), current.createdAt(),
+                    current.expiresAt(), resolved.operationalRoles(), resolved.currentRole());
         }
 
         @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -195,13 +242,18 @@ public final class BffControllers {
         public record LogoutResult(String redirect) {
         }
 
-        /** Schema User di contracts/bff.yaml; tenants e currentTenant assenti se l'applicazione non li gestisce. */
+        /**
+         * Schema User di contracts/bff.yaml; tenants e currentTenant assenti se l'applicazione non li gestisce,
+         * operationalRoles e currentRole se l'utente non ha ruoli operativi.
+         */
         @JsonInclude(JsonInclude.Include.NON_EMPTY)
         public record UserView(String username, String name, String email, List<String> roles,
-                               List<SessionContext.Tenant> tenants, String currentTenant) {
+                               List<SessionContext.Tenant> tenants, String currentTenant,
+                               List<SessionContext.Role> operationalRoles, String currentRole) {
 
             static UserView of(SessionContext s) {
-                return new UserView(s.username(), s.name(), s.email(), s.roles(), s.tenants(), s.tenantId());
+                return new UserView(s.username(), s.name(), s.email(), s.roles(), s.tenants(), s.tenantId(),
+                        s.operationalRoles(), s.currentRole());
             }
         }
     }

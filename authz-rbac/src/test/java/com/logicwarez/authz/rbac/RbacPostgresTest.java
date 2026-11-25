@@ -67,7 +67,9 @@ class RbacPostgresTest {
     void migrazioniNellaHistoryPropria() {
         List<String> versions = jdbc.sql("SELECT version FROM authz_schema_history WHERE success ORDER BY installed_rank")
                 .query(String.class).list();
-        assertThat(versions).containsExactly("1", "2", "3", "4");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5");
+        assertThat(jdbc.sql("SELECT count(*) FROM app_role WHERE is_system AND NOT is_base").query(Integer.class)
+                .single()).as("i ruoli esistenti restano di base").isZero();
         assertThat(jdbc.sql("SELECT permission_code FROM app_permission WHERE permission_code LIKE 'authz.%' ORDER BY 1").query(String.class).list())
                 .containsExactly("authz.rbac.manage", "authz.rbac.manageglobal",
                         "authz.session.revoke", "authz.session.revokeglobal");
@@ -135,6 +137,38 @@ class RbacPostgresTest {
 
         assertThat(authorization.resolve(user, b, false).tenantId()).isEqualTo(b);
         assertThat(authorization.resolve(user, null).tenantId()).as("ultimo tenant invariato").isEqualTo(a);
+    }
+
+    @Test
+    void ruoliOperativiUnoAllaVoltaEUltimoUsato() {
+        String a = tenant("A");
+        String user = user();
+        String base = role("demo.profile.read");
+        String clerk = role("demo.order.create");
+        String approver = role("demo.order.approve");
+        jdbc.sql("UPDATE app_role SET is_base = FALSE, description = ? WHERE role_code = ?").param("Addetto")
+                .param(clerk).update();
+        jdbc.sql("UPDATE app_role SET is_base = FALSE WHERE role_code = ?").param(approver).update();
+        assign(user, base, a);
+        assign(user, clerk, a);
+        assign(user, approver, a);
+
+        AuthorizationContext asClerk = authorization.resolve(user, null, clerk);
+        assertThat(asClerk.currentRole()).isEqualTo(clerk);
+        assertThat(asClerk.operationalRoles()).containsEntry(clerk, "Addetto").containsEntry(approver, approver)
+                .doesNotContainKey(base);
+        assertThat(asClerk.permissions()).containsExactly("demo.order.create", "demo.profile.read");
+
+        assertThat(authorization.resolve(user, null).currentRole()).as("ultimo ruolo usato").isEqualTo(clerk);
+        assertThat(authorization.resolve(user, a, false).permissions()).as("token: tutti i ruoli")
+                .containsExactly("demo.order.approve", "demo.order.create", "demo.profile.read");
+        assertThat(authorization.resolve(user, null).currentRole()).as("il token non cambia l'ultimo ruolo")
+                .isEqualTo(clerk);
+
+        // un ruolo eliminato non resta come ultimo usato
+        jdbc.sql("DELETE FROM app_role WHERE role_code = ?").param(clerk).update();
+        assertThat(jdbc.sql("SELECT last_role_code IS NULL FROM app_user WHERE username = ?").param(user)
+                .query(Boolean.class).single()).isTrue();
     }
 
     // --- Directory del tenant ---

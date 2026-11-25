@@ -17,6 +17,17 @@ public interface AuthorizationResolver {
     Resolved resolve(String username, String requestedTenant);
 
     /**
+     * Come {@link #resolve(String, String)}, con un ruolo operativo preferito (ADR-28 di Quadrava): il resolver lo
+     * attiva se l'utente lo ha sul tenant, altrimenti ne sceglie uno (per esempio l'ultimo usato) senza chiedere.
+     * L'implementazione predefinita ignora il ruolo: resolver senza ruoli operativi.
+     *
+     * @param preferredRole ruolo operativo scelto dall'utente, null se non indicato
+     */
+    default Resolved resolve(String username, String requestedTenant, String preferredRole) {
+        return resolve(username, requestedTenant);
+    }
+
+    /**
      * Come {@link #resolve}, per una richiesta con un token (accesso senza sessione, ripetuto a ogni richiesta): senza
      * effetti, in particolare senza cambiare il tenant con cui l'utente entrera' al prossimo login. L'implementazione
      * predefinita chiama {@link #resolve}.
@@ -26,14 +37,26 @@ public interface AuthorizationResolver {
     }
 
     /**
-     * @param tenants tenant su cui l'utente puo' lavorare, compreso {@code tenantId}; vuoto se l'applicazione
-     *                non gestisce i tenant (il BFF non offre allora il cambio)
+     * @param tenants          tenant su cui l'utente puo' lavorare, compreso {@code tenantId}; vuoto se
+     *                         l'applicazione non gestisce i tenant (il BFF non offre allora il cambio)
+     * @param operationalRoles ruoli operativi dell'utente sul tenant, uno alla volta; vuoto se non ne ha (il BFF non
+     *                         offre allora il cambio di ruolo e i permessi sono quelli di tutti i ruoli)
+     * @param currentRole      ruolo operativo attivo, tra {@code operationalRoles}: i permessi sono quelli dei ruoli
+     *                         di base piu' questo. Null senza ruoli operativi
      */
     record Resolved(String username, String email, String tenantId, List<SessionContext.Tenant> tenants,
-                    List<String> roles, List<String> permissions) {
+                    List<String> roles, List<String> permissions, List<SessionContext.Role> operationalRoles,
+                    String currentRole) {
 
         public Resolved {
             tenants = tenants == null ? List.of() : List.copyOf(tenants);
+            operationalRoles = operationalRoles == null ? List.of() : List.copyOf(operationalRoles);
+        }
+
+        /** Senza ruoli operativi. */
+        public Resolved(String username, String email, String tenantId, List<SessionContext.Tenant> tenants,
+                        List<String> roles, List<String> permissions) {
+            this(username, email, tenantId, tenants, roles, permissions, List.of(), null);
         }
 
         /** Senza elenco dei tenant (cambio di tenant non offerto). */

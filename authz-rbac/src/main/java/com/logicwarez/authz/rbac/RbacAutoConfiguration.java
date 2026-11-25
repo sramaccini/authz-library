@@ -81,6 +81,11 @@ public class RbacAutoConfiguration {
             }
 
             @Override
+            public Resolved resolve(String username, String tenant, String preferredRole) {
+                return resolved(service.resolve(username, tenant, preferredRole));
+            }
+
+            @Override
             public Resolved resolveForToken(String username, String tenant) {
                 return resolved(service.resolve(username, tenant, false));
             }
@@ -91,6 +96,9 @@ public class RbacAutoConfiguration {
         return new AuthorizationResolver.Resolved(ctx.username(), ctx.email(), ctx.tenantId(),
                 ctx.availableTenants().entrySet().stream()
                         .map(t -> new SessionContext.Tenant(t.getKey(), t.getValue())).toList(),
-                ctx.roles().stream().toList(), ctx.permissions().stream().toList());
+                ctx.roles().stream().toList(), ctx.permissions().stream().toList(),
+                ctx.operationalRoles().entrySet().stream()
+                        .map(r -> new SessionContext.Role(r.getKey(), r.getValue())).toList(),
+                ctx.currentRole());
     }
 }

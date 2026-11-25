@@ -8,7 +8,7 @@ avere login OIDC con il pattern BFF, sessione su Redis e RBAC per tenant. Confor
 |---|---|
 | `authz-session` | `SessionContext` salvato in una sessione **Spring Session Data Redis** standard; filtro e `SessionContextConfigurer` per Spring Security; interfaccia `AuthorizationResolver` |
 | `authz-rbac` | Modello RBAC su PostgreSQL, risoluzione in-process al login, API `/api/v1/admin/**`, migrazioni Flyway con history propria (`authz_schema_history`) |
-| `authz-bff` | Login OIDC, `/bff/login`, `/bff/user`, `/bff/tenant`, `/logout`, `/authz/capabilities`, `/authz/check`, revoca `/bff/admin/users/{username}/sessions`, CSRF, controllo `Origin`, rate limiting del login |
+| `authz-bff` | Login OIDC, `/bff/login`, `/bff/user`, `/bff/tenant`, `/bff/role`, `/logout`, `/authz/capabilities`, `/authz/check`, revoca `/bff/admin/users/{username}/sessions`, CSRF, controllo `Origin`, rate limiting del login |
 | `examples/authz-demo-app` | Un solo deployable che assembla le tre librerie (non pubblicato) |
 
 Novità e modifiche per versione: [CHANGELOG.md](CHANGELOG.md).
@@ -87,8 +87,9 @@ npm run conformance:bff -- --bff http://localhost:8080 --return http://localhost
 | Chiamata | Risposta |
 |---|---|
 | `GET /bff/login?return=<pagina>[&tenant=<id>]` | `302` allo IAM, poi alla pagina. `return` deve avere un'origine delle applicazioni (`authz.bff.frontend.allowed-origins` o l'origine pubblica del BFF), altrimenti `400` Problem. Con una sessione già aperta: `302` subito alla pagina |
-| `GET /bff/user` | `{username, name, email, roles, tenants: [{id, label}], currentTenant}`; `401` senza sessione |
+| `GET /bff/user` | `{username, name, email, roles, tenants: [{id, label}], currentTenant, operationalRoles: [{id, label}], currentRole}`; i campi dei tenant e dei ruoli operativi solo se l'utente ne ha; `401` senza sessione |
 | `POST /bff/tenant` `{"tenant": "<id>"}` | `204`; `404` Problem se il tenant non è offerto all'utente; `400` se manca |
+| `POST /bff/role` `{"role": "<id>"}` | `204` con la nuova `X-Permissions-Version`; `404` Problem se il ruolo non è uno dei ruoli operativi dell'utente; `400` se il corpo non è esattamente quello |
 | `POST /logout` | `200 {"redirect": "<logout sullo IAM>"}`: la pagina naviga lì per chiudere anche l'SSO |
 | `GET /authz/capabilities?app=<app>` | `{permissions, version}` e header `X-Permissions-Version`; `400` senza `app` |
 | `POST /authz/check` `{"checks": [{permission, resource?}]}` | `{results: [{permission, resource?, allowed}]}`; massimo 200 controlli |
@@ -100,12 +101,23 @@ Regole di ogni chiamata:
   deve rimandarlo nell'header `X-XSRF-TOKEN`, altrimenti `403`. In più, un header `Origin` presente ma estraneo
   alle applicazioni dà `403`.
 - **`X-Permissions-Version`** su ogni risposta autenticata: cambia quando cambiano i permessi della sessione
-  (per esempio dopo un cambio di tenant).
+  (per esempio dopo un cambio di tenant o di ruolo operativo).
 - **Permessi** nel formato `dominio.risorsa.azione`, minuscolo (`tracker.issue.edit`). Lo schema RBAC lo impone
   con un vincolo (`ck_permission_code_format`); i permessi che finiscono in `global` sono riservati al ruolo di
   sistema `GLOBAL_ADMIN`.
 - **Tenant**: al login l'utente entra sull'ultimo tenant usato (`app_user.last_tenant_id`), altrimenti sul primo
   in ordine di codice; non viene mai chiesto. L'etichetta mostrata è la descrizione del tenant (`tenant.description`).
+- **Ruoli operativi** (parte facoltativa di `bff.yaml` 0.6.0, ADR-28 di Quadrava): per la separazione dei compiti
+  l'utente lavora con un ruolo alla volta. Un ruolo con `app_role.is_base = TRUE` (il valore predefinito: tutti i ruoli
+  esistenti) vale sempre; quelli con `FALSE` sono operativi e se ne attiva uno solo. I permessi della sessione sono
+  quelli dei ruoli di base più quello attivo; senza ruoli operativi, quelli di tutti i ruoli, come prima. Al login
+  l'utente entra sull'ultimo ruolo usato (`app_user.last_role_code`), altrimenti sul primo in ordine di codice; non
+  viene mai chiesto. Si cambia con `POST /bff/role`, e il cambio di tenant tiene il ruolo se l'utente lo ha anche lì.
+  L'etichetta è la descrizione del ruolo. Un `role` mandato dalla pagina a `/authz/*` è ignorato. Le richieste con
+  un token non hanno un ruolo attivo: hanno i permessi di tutti i ruoli.
+- **`X-Active-Role`**: per l'applicazione l'header è il ruolo attivo della sessione, mai quello mandato dalla pagina
+  (assente senza ruolo e per le richieste con un token). Con il token relay va inoltrato ai servizi insieme al token,
+  perché quelli che applicano la separazione dei compiti autorizzano con i ruoli di base più quel ruolo.
 - **Stream di eventi** (data source `live` di Quadrava): con BFF e API nello stesso processo non c'è un proxy da
   configurare. L'API risponde `text/event-stream` (per esempio `SseEmitter` con timeout `0`) e
   `spring.mvc.async.request-timeout: -1` toglie il limite di durata; davanti, nessun proxy deve fare buffering.

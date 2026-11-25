@@ -2,6 +2,32 @@
 
 Formato [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Semantic Versioning](https://semver.org/lang/it/).
 
+## [Non rilasciato]
+
+Richiesta di Quadrava CE: ruoli operativi, uno alla volta (ADR-28, `contracts/bff.yaml` 0.6.0). Migrazione `V5`.
+
+### Aggiunto
+
+- Migrazione `V5__operational_roles`: `app_role.is_base` (predefinito `TRUE`: ogni ruolo esistente resta di base e
+  i permessi non cambiano) e `app_user.last_role_code`, l'ultimo ruolo operativo usato.
+- Ruoli operativi: con ruoli `is_base = FALSE` sul tenant, la sessione ha uno di quelli attivo (il preferito, poi
+  l'ultimo usato, poi il primo per codice) e i permessi dei ruoli di base più quello. `AuthorizationService.resolve(
+  username, tenant, preferredRole)`; le richieste con un token hanno i permessi di tutti i ruoli.
+- `SessionContext`: `operationalRoles` (`SessionContext.Role`, `{id, label}`), `currentRole` e `offersRole`;
+  il costruttore precedente resta. Stesso `serialVersionUID`: le sessioni già aperte si leggono senza ruoli.
+- `AuthorizationResolver.resolve(username, tenant, preferredRole)`, con un'implementazione predefinita che ignora il
+  ruolo; `Resolved` ha `operationalRoles` e `currentRole`, e i costruttori precedenti restano.
+- `POST /bff/role` `{"role": "<id>"}` (CSRF): `204` con la nuova `X-Permissions-Version`, `404` per un ruolo non
+  offerto, `400` per un corpo diverso. `/bff/user` ha `operationalRoles` e `currentRole` quando l'utente ne ha.
+- Header `X-Active-Role`: per l'applicazione è il ruolo attivo della sessione, mai quello della pagina.
+- Test: `BffRolesTest`, `AuthorizationServiceTest`, `RbacPostgresTest`.
+
+### Modificato
+
+- La versione dei permessi (`X-Permissions-Version`) comprende il ruolo attivo, così cambia a ogni cambio di ruolo;
+  senza ruolo operativo è quella di prima.
+- Il cambio di tenant tiene il ruolo operativo se l'utente lo ha anche sul nuovo tenant.
+
 ## [2.6.0] - 2026-11-19
 
 Richiesta A10 di OpenDevTrack (GDPR, ASVS 8.3.2; issue sramaccini/open-devtrack#24). Nessuna migrazione.
